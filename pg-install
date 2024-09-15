@@ -1,0 +1,97 @@
+#!/bin/sh
+set -e
+set -u
+
+fn_help() { (
+    echo "pg-install v1.0.0 - installs postgres via apt-get or apk"
+    echo ""
+    echo "USAGE"
+    echo "    pg-install <version>"
+    echo ""
+    echo "EXAMPLE"
+    echo "    pg-install 16"
+    echo ""
+    echo "COPYING"
+    echo "    Copyright (c) 2024 AJ ONeal <aj@bnna.net>"
+    echo "    Licensed under the MPL-2.0"
+); }
+
+g_sudo=""
+if command -v sudo > /dev/null; then
+    g_sudo="sudo"
+fi
+
+fn_pg_find_or_install() { (
+    if command -v psql; then
+        return 0
+    fi
+
+    a_pgver="${1}"
+    if command -v apt-get > /dev/null; then
+        ${g_sudo} apt-get install -y postgresql-"${a_pgver}" postgresql-client-"${a_pgver}"
+    elif command -v apk; then
+        ${g_sudo} apk add --no-cache postgresql"${a_pgver}" postgresql"${a_pgver}"-client
+    else
+        echo >&2 "error: please install psql / postgres manually"
+        return 1
+    fi
+); }
+
+fn_pg_set_default_user() { (
+    if test -n "${g_sudo}"; then
+        ${g_sudo} -u postgres sh -c 'echo "ALTER USER \"postgres\" WITH PASSWORD '\'postgres\''" | psql postgres'
+    else
+        echo "ALTER USER \"postgres\" WITH PASSWORD 'postgres'" | psql postgres
+    fi
+); }
+
+fn_init_pgpass() { (
+    if ! test -e ~/.pgpass; then
+        touch ~/.pgpass
+    fi
+    if ! grep -q -i '^\s*#.*port:d' ~/.pgpass; then
+        echo '# hostname:port:database:username:password' >> ~/.pgpass.header.txt
+        mv ~/.pgpass ~/.pgpass.noheader.bak
+        cat ~/.pgpass.header.txt ~/.pgpass.noheader.bak > ~/.pgpass
+        rm ~/.pgpass.header.txt ~/.pgpass.noheader.bak
+    fi
+    if ! grep -q '^\s*#\s*export\s\+PGPASSFILE=' ~/.pgpass; then
+        echo "# export PGPASSFILE='${HOME}/.pgpass'" >> ~/.pgpass.header.txt
+        mv ~/.pgpass ~/.pgpass.noheader.bak
+        cat ~/.pgpass.header.txt ~/.pgpass.noheader.bak > ~/.pgpass
+        rm ~/.pgpass.header.txt ~/.pgpass.noheader.bak
+    fi
+    chmod 0600 ~/.pgpass
+); }
+
+main() { (
+    case ${1:-} in
+        --help | help)
+            fn_help
+            return 0
+            ;;
+        -V | --version | version)
+            fn_help
+            return 0
+            ;;
+        "")
+            fn_help >&2
+            return 1
+            ;;
+        *) ;;
+    esac
+
+    g_pgver="${1:-}"
+
+    fn_find_or_install_pg "${g_pgver}" >&2
+    # command -v psql
+    # /usr/lib/postgresql/16/bin/psql
+
+    fn_pg_set_default_user >&2
+    #echo "ALTER USER \"postgres\" WITH PASSWORD 'postgres'"
+
+    fn_init_pgpass >&2
+    #echo '~'/.pgpass
+); }
+
+main "${@:-}"
