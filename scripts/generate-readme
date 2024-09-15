@@ -1,0 +1,68 @@
+#!/bin/sh
+# shellcheck disable=SC2016
+set -e
+set -u
+
+# To generate the list of commands:
+#     ls pg-* | sort -u
+
+{
+    echo '# pg-essentials'
+    echo ''
+    echo 'Utilities for managing PostgreSQL databases, including multi-tenant scenarios.'
+    echo ''
+    echo '# Table of Contents'
+    echo ''
+    echo '-   pg-example-connect'
+    echo '-   pg-install'
+    echo '-   pg-register-service'
+    echo '-   pg-addgroup'
+    echo '-   pg-adduser'
+    echo '-   pg-store-credential'
+    echo '-   pg-passwd'
+    echo '-   pg-backup'
+    echo ''
+} > README.md
+
+{
+    printf '## pg-example-connect\n\n'
+    echo "Copy, paste, & season to taste!"
+    echo "(basically just an alias for connecting to a specific db)"
+
+    printf '\n## pg-install\n\n```text\n'
+    ./pg-install --help
+    printf '```\n'
+
+    printf '\n## pg-register-service\n\n```text\n'
+    ./pg-register-service --help
+    printf '```\n'
+
+    printf '\n## pg-addgroup\n\n```text\n'
+    ./pg-addgroup --help
+    printf '```\n'
+
+    printf '\n## pg-adduser\n\n```text\n'
+    ./pg-adduser --help
+    printf '```\n'
+
+    printf '\n## pg-store-credential\n\n```text\n'
+    ./pg-store-credential --help
+    printf '```\n'
+
+    printf '\n## pg-passwd\n\n```text\n'
+    ./pg-passwd --help
+    printf '```\n'
+
+    printf '\n## pg-backup\n\n```text\n'
+    ./pg-backup --help
+    printf '```\n'
+} | grep -v -E '(COPYING|Copyright|Licensed)' >> README.md
+
+{
+    echo ""
+    echo "# Copying"
+    echo ""
+    # shellcheck disable=SC1003 # the trailing \ is for markdownw
+    echo 'Copyright (c) 2024 AJ ONeal <aj@bnna.net> \'
+    echo "Licensed under the MPL-2.0"
+} >> README.md
