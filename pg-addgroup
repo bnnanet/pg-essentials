@@ -1,0 +1,77 @@
+#!/bin/sh
+set -e
+set -u
+
+fn_help() { (
+    echo "pg-addgroup v1.0.0 - add a group role to hba for remote users with samename dbs"
+    echo ""
+    echo "USAGE"
+    echo "    pg-addgroup [hostssl|host|etc] [group-name] [pg-port]"
+    echo ""
+    echo "EXAMPLE"
+    echo "    pg-addgroup hostssl remote_users 5432"
+    echo ""
+    echo "NOTE"
+    echo "    use 'host' rather than 'hostssl' if you terminate postgres' tls via proxy"
+    echo ""
+    echo "COPYING"
+    echo "    Copyright (c) 2024 AJ ONeal <aj@bnna.net>"
+    echo "    Licensed under the MPL-2.0"
+); }
+
+g_sudo=""
+if command -v sudo > /dev/null; then
+    g_sudo="sudo"
+fi
+
+fn_pg_create_role() { (
+    a_pgport="${1}"
+    a_conn_type="${2}"
+    a_pgrole="${3}"
+
+    # https://www.postgresql.org/docs/current/sql-createrole.html
+    echo "Creating role (group) '${a_pgrole}'..."
+    echo "CREATE ROLE \"${a_pgrole}\" NOLOGIN;" |
+        psql "postgres://postgres:postgres@localhost:${a_pgport}/postgres" -f -
+
+    echo "Updating ~/.local/share/postgres/var/pg_hba.conf to allow '${a_pgrole}' users to login and access their own db..."
+    # 'host' instead of 'hostssl' since the decryption may happen at the SNI router
+    if ! grep -q -F "${a_pgrole}" ~/.local/share/postgres/var/pg_hba.conf; then
+        echo "# Allow ${a_pgrole} to connect remotely over the internet
+${a_conn_type} sameuser         +${a_pgrole}        0.0.0.0/0               scram-sha-256
+${a_conn_type} sameuser         +${a_pgrole}        ::0/0                   scram-sha-256" \
+            >> ~/.local/share/postgres/var/pg_hba.conf
+    fi
+); }
+
+fn_rc_restart_pg() { (
+    echo "Restarting postgres"
+    ${g_sudo} systemctl restart postgres
+); }
+
+main() { (
+    case ${1:-} in
+        --help | help)
+            fn_help
+            return 0
+            ;;
+        -V | --version | version)
+            fn_help
+            return 0
+            ;;
+        "")
+            fn_help >&2
+            return 1
+            ;;
+        *) ;;
+    esac
+
+    a_conn_type="${1}"
+    a_pgrole="${2:-remote_users}"
+    a_pgport="${3:-5432}"
+
+    fn_pg_create_role "${a_pgport}" "${a_conn_type}" "${a_pgrole}" >&2
+    rc_restart_pg >&2
+); }
+
+main "${@:-}"
