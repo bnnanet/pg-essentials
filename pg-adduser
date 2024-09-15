@@ -1,0 +1,88 @@
+#!/bin/sh
+set -e
+set -u
+
+fn_help() { (
+    echo "pg-adduser v1.0.0 - adds a remote user (and db of the same name) to a group role"
+    echo ""
+    echo "USAGE"
+    echo "    pg-adduser <username-prefix> [port] [group-name]"
+    echo ""
+    echo "EXAMPLE"
+    echo "    pg-adduser 'foobar' 5432 'remote_users'"
+    echo ""
+    echo "NOTES"
+    echo "    - usernames consist of a prefix + random hex string"
+    echo "    - each username has exactly 1 database of exactly the same name"
+    echo "    - passwords are random base58 (url-safe) strings"
+    echo ""
+    echo "COPYING"
+    echo "    Copyright (c) 2024 AJ ONeal <aj@bnna.net>"
+    echo "    Licensed under the MPL-2.0"
+); }
+
+fn_pg_create_db() { (
+    b_group="${1}"
+    b_db="${2}"
+    b_pw="${3}"
+    b_port="${4}"
+
+    echo "Creating database '${b_db}' (for user of the same name) ..."
+    echo "CREATE DATABASE \"${b_db}\";" |
+        psql "postgres://postgres:postgres@localhost:${b_port}/postgres" -f -
+
+    echo "Creating user '${b_db}' with login permissions as a member of '${b_group}' ..."
+    echo "CREATE ROLE \"${b_db}\" LOGIN INHERIT IN ROLE \"${b_group}\" ENCRYPTED PASSWORD '${b_pw}';" |
+        psql "postgres://postgres:postgres@localhost:${b_port}/postgres" -f -
+
+    echo "Granting '${b_db}' access to its own (same-name) database ..."
+    echo "GRANT ALL PRIVILEGES ON DATABASE \"${b_db}\" to \"${b_db}\";" |
+        psql "postgres://postgres:postgres@localhost:${b_port}/postgres" -f -
+); }
+
+fn_rnd_base58() { (
+    xxd -c 0 -l 64 -p /dev/urandom |
+        xxd -r -ps |
+        base64 -w 0 |
+        tr -d /+_=- |
+        tr -d 0IOl |
+        cut -c 1-22
+); }
+
+main() { (
+    case ${1:-} in
+        --help | help)
+            fn_help
+            return 0
+            ;;
+        -V | --version | version)
+            fn_help
+            return 0
+            ;;
+        "")
+            fn_help >&2
+            return 1
+            ;;
+        *) ;;
+    esac
+
+    b_prefix="${1:-}"
+    b_pgport="${2:-5432}"
+    b_pggroup="${3:-remote_users}"
+
+    b_rnd_hex="$(xxd -l3 -ps /dev/urandom)"
+    b_pguser="${b_prefix}_${b_rnd_hex}"
+    b_pw_base58="$(fn_rnd_base58)"
+
+    fn_pg_create_db "${b_pggroup}" "${b_pguser}" "${b_pw_base58}" "${b_pgport}" >&2
+
+    echo >&2 ""
+    echo "password: '${b_pw_base58}'"
+    echo >&2 ""
+    echo "pgpass: localhost:${b_pgport}:${b_pguser}:${b_pguser}:${b_pw_base58}"
+    echo >&2 ""
+    echo "psql 'postgres://${b_pguser}:${b_pw_base58}@localhost:${b_pgport}/${b_pguser}'"
+    echo >&2 ""
+); }
+
+main "${@:-}"
