@@ -1,0 +1,92 @@
+#!/bin/sh
+set -e
+set -u
+
+fn_help() { (
+    echo "pg-backup v1.0.0 - creates portable (across instances) SQL schema & data backups"
+    echo ""
+    echo "USAGE"
+    echo "    pg-backup <user> [host] [port] [dbname]"
+    echo ""
+    echo "EXAMPLE"
+    echo "    pg-backup 'foobar-xxxxxx' 'pg-1.example.com' 5432 'foobar-xxxxxx'"
+    echo ""
+    echo "NOTES"
+    echo "    - the username and database name should typically be the same"
+    echo ""
+    echo "COPYING"
+    echo "    Copyright (c) 2024 AJ ONeal <aj@bnna.net>"
+    echo "    Licensed under the MPL-2.0"
+); }
+
+fn_pg_dump_parts() { (
+    b_user="${1}"
+    b_host="${2}"
+    b_port="${3}"
+    b_db="${4}"
+
+    # Note: schema includes extensions such as htstore and uuid
+    pg_dump --no-privileges --schema-only --clean \
+        --username "${b_user}" --no-password --host "${b_host}" --port "${b_port}" \
+        -f ./"${b_db}".schema.drop.sql "${b_db}" >&2
+    echo ./"${b_db}".schema.drop.sql
+
+    pg_dump --no-privileges --schema-only \
+        --username "${b_user}" --no-password --host "${b_host}" --port "${b_port}" \
+        -f ./"${b_db}".schema.sql "${b_db}" >&2
+    echo ./"${b_db}".schema.sql
+
+    pg_dump --no-privileges --data-only \
+        --username "${b_user}" --no-password --host "${b_host}" --port "${b_port}" \
+        -f ./"${b_db}".data.sql "${b_db}" >&2
+    echo ./"${b_db}".data.sql
+); }
+
+# fn_pg_dump_full() { (
+#     b_user="${1}"
+#     b_host="${2}"
+#     b_port="${3}"
+#     b_db="${4}"
+
+#     pg_dump --no-privileges \
+#         --username "${b_user}" --no-password \
+#         -f ./"${b_user}".full.sql "${b_user}" >&2
+# ); }
+
+# fn_pg_dumpall() { (
+#     b_user="${1}"
+#     b_host="${2}"
+#     b_port="${3}"
+#     b_db="${4}"
+
+#     pg_dumpall --no-privileges --globals-only \
+#         --username "${b_user}" --no-password --host "${b_host}" --port "${b_port}" \
+#         -f ./"${b_user}".globals.sql --dbname "${b_db}" >&2
+# ); }
+
+main() { (
+    case ${1:-} in
+        --help | help)
+            fn_help
+            return 0
+            ;;
+        -V | --version | version)
+            fn_help
+            return 0
+            ;;
+        "")
+            fn_help >&2
+            return 1
+            ;;
+        *) ;;
+    esac
+
+    b_pguser="${1:-}"
+    b_pghost="${2:-localhost}"
+    b_pgport="${3:-5432}"
+    b_pgdb="${4:-$b_pguser}"
+
+    fn_pg_dump_parts "${b_pguser}" "${b_pghost}" "${b_pgport}" "${b_pgdb}"
+); }
+
+main "${@:-}"
