@@ -1,0 +1,91 @@
+#!/bin/sh
+
+set -e
+set -u
+
+fn_help() { (
+    echo "pg-install v1.0.0 - installs postgres via apt-get or apk"
+    echo ""
+    echo "USAGE"
+    echo "    pg-install <version>"
+    echo ""
+    echo "EXAMPLE"
+    echo "    pg-install 16"
+    echo ""
+    echo "COPYING"
+    echo "    Copyright (c) 2024 AJ ONeal <aj@bnna.net>"
+    echo "    Licensed under the MPL-2.0"
+
+); }
+
+g_pgver="${1:-}"
+
+if test -z "${g_pgver}"; then
+    fn_help >&2
+    return 1
+fi
+
+if test "${g_pgver}" = "--help" ||
+    test "${g_pgver}" = "help" ||
+    test "${g_pgver}" = "-V" ||
+    test "${g_pgver}" = "--version" ||
+    test "${g_pgver}" = "version"; then
+    fn_help >&2
+    return 0
+fi
+
+g_sudo=""
+if command -v sudo > /dev/null; then
+    g_sudo="sudo"
+fi
+
+fn_pg_find_or_install() { (
+    if command -v psql; then
+        return 0
+    fi
+
+    a_pgver="${1}"
+    if command -v apt-get > /dev/null; then
+        ${g_sudo} apt-get install -y postgresql-"${a_pgver}" postgresql-client-"${a_pgver}" >&2
+    elif command -v apk; then
+        ${g_sudo} apk add --no-cache postgresql"${a_pgver}" postgresql"${a_pgver}"-client >&2
+    else
+        echo >&2 "[ERROR] please install psql / postgres manually"
+        exit 1
+    fi
+); }
+
+fn_pg_set_default_user() { (
+    {
+        if test -n "${g_sudo}"; then
+            ${g_sudo} -u postgres sh -c 'echo "ALTER USER \"postgres\" WITH PASSWORD '\'postgres\''" | psql postgres'
+        else
+            echo "ALTER USER \"postgres\" WITH PASSWORD 'postgres'" | psql postgres
+        fi
+    } >&2
+); }
+
+fn_init_pgpass() { (
+    if ! test -s ~/.pgpass; then
+        {
+            echo "# export PGPASSFILE='${HOME}/.pgpass'"
+            echo '# hostname:port:database:username:password'
+            echo 'localhost:5432:postgres:postgres:postgres'
+        } > ~/.pgpass
+    fi
+    chmod 0600 ~/.pgpass
+); }
+
+main() { (
+    fn_find_or_install_pg "${g_pgver}"
+    # command -v psql
+    # /usr/lib/postgresql/16/bin/psql
+
+    fn_pg_set_default_user
+    #echo "ALTER USER \"postgres\" WITH PASSWORD 'postgres'"
+
+    fn_init_pgpass
+    #echo '~'/.pgpass
+); }
+
+main
