@@ -1,0 +1,97 @@
+#!/bin/sh
+#shellcheck disable=SC1090
+set -e
+set -u
+
+fn_help() { (
+    a_user=${1:-}
+    echo "pg-register-service v1.0.0 - register a postgres daemon for the current user"
+    echo ""
+    echo "USAGE"
+    echo "    pg-register-service <port> [operating-system-user]"
+    echo ""
+    echo "EXAMPLE"
+    echo "    pg-register-service 5432 ${a_user}"
+    echo ""
+    echo "COPYING"
+    echo "    Copyright (c) 2024 AJ ONeal <aj@bnna.net>"
+    echo "    Licensed under the MPL-2.0"
+); }
+
+g_sudo=""
+if command -v sudo > /dev/null; then
+    g_sudo="sudo"
+fi
+
+fn_serviceman_find_or_install() { (
+    if ! command -v serviceman > /dev/null; then
+        curl --fail-with-body -sS https://webi.sh/serviceman | sh
+    fi
+); }
+
+fn_init_local_db() { (
+    mkdir -p ~/.local/share/postgres/var/run/
+
+    # Default config at:
+    #   /etc/postgresql/16/main/pg_hba.conf
+    #   /etc/postgresql/16/main/postgresql.conf
+    # Deafult data at: (also `SHOW data_directory;`)
+    #   /var/lib/postgresql/16/main/
+
+    echo "postgres" > ~/pg-pwfile.tmp
+    initdb -D ~/.local/share/postgres/var/ \
+        --username postgres --pwfile ~/pg-pwfile.tmp \
+        --auth-local=password --auth-host=password
+    rm ~/pg-pwfile.tmp
+); }
+
+fn_serviceman_add_pg() { (
+    b_user="${1}"
+    b_port="${2}"
+
+    # if run as a login service:
+    # sudo loginctl enable-linger "$(id -u -n)"
+
+    ${g_sudo} env PATH="${PATH}" \
+        serviceman add --name "postgres-as-${b_user}" --path "${PATH}" \
+        --system --username "${b_user}" -- \
+        postgres -D "${HOME}/.local/share/postgres/var" -p "${b_port}"
+); }
+
+main() { (
+    b_pgport="${1:-}"
+    b_pguser="${2:-}"
+
+    if test -z "${b_pguser}"; then
+        b_user="$(id -u -n)"
+        b_pguser="${b_pguser:-$b_user}"
+    fi
+
+    case ${1:-} in
+        --help | help)
+            fn_help "${b_user}"
+            return 0
+            ;;
+        -V | --version | version)
+            fn_help "${b_user}"
+            return 0
+            ;;
+        "")
+            fn_help "${b_user}" >&2
+            return 1
+            ;;
+        *) ;;
+    esac
+
+    fn_serviceman_find_or_install >&2
+    . ~/.config/envman/PATH.env
+    echo '~'/.local/bin/serviceman
+
+    fn_init_local_db >&2
+    echo '~'/.local/share/postgres/var/
+
+    fn_serviceman_add_pg "${b_pguser}" "${b_pgport}" >&2
+    echo "/etc/systemd/system/postgres-as-${b_pguser}.service"
+); }
+
+main "${@:-}"
