@@ -15,7 +15,7 @@ Utilities for managing PostgreSQL databases, including multi-tenant scenarios.
 
 ## psql-example-connect
 
-Copy, paste, & season to taste!
+Copy, paste, & season to taste! \
 (basically just an alias for connecting to a specific db)
 
 ## pg-install

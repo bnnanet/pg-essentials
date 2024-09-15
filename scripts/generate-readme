@@ -26,7 +26,8 @@ set -u
 
 {
     printf '## pg-example-connect\n\n'
-    echo "Copy, paste, & season to taste!"
+    # shellcheck disable=SC1003 # the trailing \ is for markdown
+    echo 'Copy, paste, & season to taste! \'
     echo "(basically just an alias for connecting to a specific db)"
 
     printf '\n## pg-install\n\n```text\n'
@@ -62,7 +63,7 @@ set -u
     echo ""
     echo "# Copying"
     echo ""
-    # shellcheck disable=SC1003 # the trailing \ is for markdownw
+    # shellcheck disable=SC1003 # the trailing \ is for markdown
     echo 'Copyright (c) 2024 AJ ONeal <aj@bnna.net> \'
     echo "Licensed under the MPL-2.0"
 } >> README.md
