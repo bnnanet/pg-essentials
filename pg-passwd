@@ -1,0 +1,70 @@
+#!/bin/sh
+set -e
+set -u
+
+fn_help() { (
+    echo "pg-passwd v1.0.0 - reset a user's password"
+    echo ""
+    echo "USAGE"
+    echo "    pg-passwd <user> [port]"
+    echo ""
+    echo "EXAMPLE"
+    echo "    pg-passwd foobar-xxxxxx 5432"
+    echo ""
+    echo "COPYING"
+    echo "    Copyright (c) 2024 AJ ONeal <aj@bnna.net>"
+    echo "    Licensed under the MPL-2.0"
+); }
+
+fn_pg_set_password() { (
+    b_user="${1}"
+    b_pw="${2}"
+    b_port="${3}"
+
+    echo "Resetting password for user '${b_user}' ..."
+    echo "ALTER USER \"${b_user}\" WITH PASSWORD '${b_pw}';" |
+        psql "postgres://postgres:postgres@localhost:${b_port}/postgres" -f -
+); }
+
+fn_rnd_base58() { (
+    xxd -c 0 -l 64 -p /dev/urandom |
+        xxd -r -ps |
+        base64 -w 0 |
+        tr -d /+_=- |
+        tr -d 0IOl |
+        cut -c 1-22
+); }
+
+main() { (
+    case ${1:-} in
+        --help | help)
+            fn_help
+            return 0
+            ;;
+        -V | --version | version)
+            fn_help
+            return 0
+            ;;
+        "")
+            fn_help >&2
+            return 1
+            ;;
+        *) ;;
+    esac
+
+    b_pguser="${1:-}"
+    b_pgport="${2:-5432}"
+
+    b_pw_base58="$(fn_rnd_base58)"
+    fn_pg_set_password "${b_pguser}" "${b_pw_base58}" "${b_pgport}" >&2
+
+    echo >&2 ""
+    echo "password: '${b_pw_base58}'"
+    echo >&2 ""
+    echo "pgpass: localhost:${b_pgport}:${b_pguser}:${b_pguser}:${b_pw_base58}"
+    echo >&2 ""
+    echo "psql 'postgres://${b_pguser}:${b_pw_base58}@localhost:${b_pgport}/${b_pguser}'"
+    echo >&2 ""
+); }
+
+main "${@:-}"
