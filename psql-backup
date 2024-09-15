@@ -3,13 +3,13 @@ set -e
 set -u
 
 fn_help() { (
-    echo "pg-backup v1.0.0 - creates portable (across instances) SQL schema & data backups"
+    echo "psql-backup v1.0.0 - creates portable (across instances) SQL schema & data backups"
     echo ""
     echo "USAGE"
-    echo "    pg-backup <user> [host] [port] [dbname]"
+    echo "    psql-backup <user> [host] [port] [dbname]"
     echo ""
     echo "EXAMPLE"
-    echo "    pg-backup 'foobar-xxxxxx' 'pg-1.example.com' 5432 'foobar-xxxxxx'"
+    echo "    psql-backup 'foobar-xxxxxx' 'pg-1.example.com' 5432 'foobar-xxxxxx'"
     echo ""
     echo "NOTES"
     echo "    - the username and database name should typically be the same"

@@ -4,16 +4,16 @@ Utilities for managing PostgreSQL databases, including multi-tenant scenarios.
 
 # Table of Contents
 
--   pg-example-connect
+-   psql-example-connect
 -   pg-install
 -   pg-register-service
 -   pg-addgroup
 -   pg-adduser
--   pg-store-credential
+-   psql-store-credential
 -   pg-passwd
--   pg-backup
+-   psql-backup
 
-## pg-example-connect
+## psql-example-connect
 
 Copy, paste, & season to taste!
 (basically just an alias for connecting to a specific db)
@@ -74,10 +74,10 @@ NOTES
     - passwords are random base58 (url-safe) strings
 ```
 
-## pg-store-credential
+## psql-store-credential
 
 ```text
-pg-store-credential v1.0.0 - stores a credential in ~/.pgpass
+psql-store-credential v1.0.0 - stores a credential in ~/.pgpass
 
 USAGE
     [space] pg-addpass [pg-url]
@@ -113,16 +113,16 @@ EXAMPLE
     pg-passwd foobar-xxxxxx 5432
 ```
 
-## pg-backup
+## psql-backup
 
 ```text
-pg-backup v1.0.0 - creates portable (across instances) SQL schema & data backups
+psql-backup v1.0.0 - creates portable (across instances) SQL schema & data backups
 
 USAGE
-    pg-backup <user> [host] [port] [dbname]
+    psql-backup <user> [host] [port] [dbname]
 
 EXAMPLE
-    pg-backup 'foobar-xxxxxx' 'pg-1.example.com' 5432 'foobar-xxxxxx'
+    psql-backup 'foobar-xxxxxx' 'pg-1.example.com' 5432 'foobar-xxxxxx'
 
 NOTES
     - the username and database name should typically be the same

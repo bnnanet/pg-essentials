@@ -3,12 +3,12 @@ set -e
 set -u
 
 # USAGE
-#     Rename this file to something like 'pg-foobar-connect', season to taste,
-#     add chmod a+x ./pg-foobar-connect to give yourself a nice shortcut.
+#     Rename this file to something like 'psql-foobar-connect', season to taste,
+#     add chmod a+x ./psql-foobar-connect to give yourself a nice shortcut.
 #
 #     Or use `aliasman` (https://webinstall.dev/aliasman) to alias instead of save to file.
 
-# save password to ~/.pgpass with pg-store-credential
+# save password to ~/.pgpass with psql-store-credential
 psql "postgres://foobar-xxxxxx@pg-1.example.com:5432/foobar-xxxxxx?sslmode=require"
 
 #psql "sslmode=require dbname=foobar-xxxxxx" -h pg-1.example.com -p 5432 -U foobar-xxxxxx
