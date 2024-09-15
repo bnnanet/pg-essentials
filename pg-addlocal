@@ -1,0 +1,23 @@
+#!/bin/sh
+set -e
+set -u
+
+echo 'NOT IMPLEMENTED'
+exit 1
+
+g_user="postgres"
+g_pw="postgres"
+g_port=5432
+
+echo "Creating user '$g_user' with login permissions ..."
+echo "CREATE ROLE \"$g_user\" LOGIN ENCRYPTED PASSWORD '$g_pw';" |
+    sudo -u postgres psql postgres -f -
+
+echo "Granting '${g_user}' access to its own (same-name) database ..."
+echo "GRANT ALL PRIVILEGES ON DATABASE \"${g_user}\" to \"${g_user}\";" |
+    sudo -u postgres psql postgres -f -
+
+echo "Password '${g_pw}'"
+echo ""
+echo "psql 'postgres://${g_user}:${g_pw}@localhost:${g_port}/${g_user}'"
+echo ""
