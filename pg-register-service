@@ -1,0 +1,67 @@
+#!/bin/sh
+#shellcheck disable=SC1090
+
+set -e
+set -u
+
+fn_help() { (
+    a_user=${1:-}
+    echo "pg-register-service v1.0.0 - registers an unprivileged postgres instance as the current user"
+    echo ""
+    echo "USAGE"
+    echo "    pg-register-service <port> [user]"
+    echo ""
+    echo "EXAMPLE"
+    echo "    pg-register-service 5432 ${a_user}"
+    echo ""
+    echo "COPYING"
+    echo "    Copyright (c) 2024 AJ ONeal <aj@bnna.net>"
+    echo "    Licensed under the MPL-2.0"
+); }
+
+g_pgport="${1:-}"
+g_pguser="${2:-}"
+
+if test -z "${g_pguser}"; then
+    g_user="$(id -u -n)"
+    g_pguser="${g_pguser:-$g_user}"
+fi
+
+if test -z "${g_pgport}"; then
+    fn_help "${g_pguser}" >&2
+    return 1
+fi
+
+if test "${g_pgport}" = "--help" ||
+    test "${g_pgport}" = "help" ||
+    test "${g_pgport}" = "-V" ||
+    test "${g_pgport}" = "--version" ||
+    test "${g_pgport}" = "version"; then
+    fn_help "${g_pguser}" >&2
+    return 0
+fi
+
+g_sudo=""
+if command -v sudo > /dev/null; then
+    g_sudo="sudo"
+fi
+
+fn_serviceman_find_or_install() { (
+    if ! command -v systemctl > /dev/null; then
+        return 0
+    fi
+    if ! command -v serviceman > /dev/null; then
+        curl --fail-with-body -sS https://webi.sh/serviceman | sh
+        . ~/.config/envman/PATH.env
+    fi
+); }
+
+main() { (
+    fn_serviceman_find_or_install
+
+    ${g_sudo} env PATH="${PATH}" \
+        serviceman add --name "postgres-as-${g_pguser}" --path "${PATH}" \
+        --system --username "${g_user}" -- \
+        postgres -D "${HOME}/.local/share/postgres/var" -p "${g_pgport}"
+); }
+main
