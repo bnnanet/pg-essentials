@@ -1,0 +1,17 @@
+#/bin/sh
+set -e
+set -u
+
+my_pg_host='pg-1.example.com'
+
+sudo env PATH="$PATH" serviceman add \
+    --path="$PATH" \
+    --name ssh-forward-pg \
+    --username "$(id -u -n)" \
+    -- \
+        ssh "${my_pg_host}" \
+            -o "ProxyCommand='sclient --alpn ssh ${my_pg_host}'" \
+            -o "LocalForward='5432 127.0.0.1:5432'" \
+            -o StdinNull=yes \
+            -o SessionType=none \
+            -o RequestTTY=no
