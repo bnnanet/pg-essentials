@@ -26,17 +26,17 @@ fn_pg_dump_parts() { (
     b_db="${4}"
 
     # Note: schema includes extensions such as htstore and uuid
-    pg_dump --no-privileges --schema-only --clean \
+    pg_dump --no-privileges --no-owner --schema-only --clean \
         --username "${b_user}" --no-password --host "${b_host}" --port "${b_port}" \
         -f ./"${b_db}".schema.drop.sql "${b_db}" >&2
     echo ./"${b_db}".schema.drop.sql
 
-    pg_dump --no-privileges --schema-only \
+    pg_dump --no-privileges --no-owner --schema-only \
         --username "${b_user}" --no-password --host "${b_host}" --port "${b_port}" \
         -f ./"${b_db}".schema.sql "${b_db}" >&2
     echo ./"${b_db}".schema.sql
 
-    pg_dump --no-privileges --data-only \
+    pg_dump --no-privileges --no-owner --data-only \
         --username "${b_user}" --no-password --host "${b_host}" --port "${b_port}" \
         -f ./"${b_db}".data.sql "${b_db}" >&2
     echo ./"${b_db}".data.sql
@@ -48,7 +48,7 @@ fn_pg_dump_parts() { (
 #     b_port="${3}"
 #     b_db="${4}"
 
-#     pg_dump --no-privileges \
+#     pg_dump --no-privileges --no-owner \
 #         --username "${b_user}" --no-password \
 #         -f ./"${b_user}".full.sql "${b_user}" >&2
 # ); }
