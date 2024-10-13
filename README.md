@@ -5,6 +5,8 @@ Utilities for managing PostgreSQL databases, including multi-tenant scenarios.
 # Table of Contents
 
 -   psql-example-connect
+-   pg-build-linux
+-   pg-build-macos
 -   pg-install
 -   pg-register-service
 -   pg-addgroup
@@ -17,6 +19,22 @@ Utilities for managing PostgreSQL databases, including multi-tenant scenarios.
 
 Copy, paste, & season to taste! \
 (basically just an alias for connecting to a specific db)
+
+## pg-build
+
+Statically\* compiles postgres for linux or macos.
+
+```text
+pg-build v1.0.0 - builds a portable, relocatable postgres from source
+
+USAGE
+    postgres-build <vendor-name> <pg-version>
+
+EXAMPLE
+    postgres-build 'custom' 17.0
+```
+
+\* it's not really _static_, but rather _bundled_ or _vendored_ - the dependencies are included in the `./lib/` folder.
 
 ## pg-install
 
