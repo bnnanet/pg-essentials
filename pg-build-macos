@@ -8,6 +8,10 @@ g_patch="${POSTGRES_PATCH_VERSION:-0}"
 
 g_semver="${g_ver}.${g_patch}"
 
+#g_exts="$(ls ./cortrib/ | grep -v 'README|*.mk|perl|python|ossp|start-scripts|xml2')"
+g_exts="amcheck auth_delay auto_explain basebackup_to_shell basic_archive bloom btree_gin btree_gist citext cube dblink dict_int dict_xsyn earthdistance file_fdw fuzzystrmatch hstore isn lo ltree pageinspect passwordcheck pg_buffercache pg_freespacemap pg_prewarm pg_stat_statements pg_surgery pg_trgm pg_visibility pg_walinspect pgcrypto pgrowlocks pgstattuple postgres_fdw seg sslinfo tablefunc tcn test_decoding tsm_system_rows tsm_system_time unaccent"
+g_exts_only="intarray intagg oid2name spi vacuumlo"
+
 g_prof=""
 g_libc=""
 # darwin
@@ -24,10 +28,10 @@ main() { (
     if test -z "${g_vendor}"; then
         echo ""
         echo "USAGE"
-        echo "    postgres-build-macos <vendor-name> <pg-version>"
+        echo "    pg-build-macos <vendor-name> <pg-version>"
         echo ""
         echo "EXAMPLE"
-        echo "    postgres-build-macos 'custom' 17.0"
+        echo "    pg-build-macos 'custom' 17.0"
         echo ""
         echo "ENVs"
         echo "    Use ENVs to set the (cosmetic) patch version"
@@ -38,39 +42,60 @@ main() { (
     fi
 
     echo ""
+    echo ""
     echo "Installing build dependencies ..."
-    sleep 1
-    fn_deps
+    if ! test -e ./"postgresql-${g_ver}-${g_target}"; then
+        sleep 1
+        fn_install_build_deps
+    fi
 
     echo ""
-    echo "Downloading PostgreSQL source ..."
+    echo ""
+    echo "Downloading PostgreSQL ${g_ver} source ..."
     sleep 1
-    fn_download
+    fn_download_pg
 
     echo ""
-    echo "Building ..."
+    echo ""
+    echo "Building 'postgres+psql' in ./postgresql-${g_ver}-${g_target}/"
     sleep 1
-    fn_build
+    fn_build_pg
 
     echo ""
-    echo "Bundling dependencies ..."
+    echo "Bundling 'postgres+psql' libs in ~/relocatable/postgres-${g_semver}-${g_target}/lib/"
+    echo "     and 'psql' libs in ~/relocatable/psql-${g_ver}-${g_target}/lib/"
     sleep 1
-    fn_copy_libs
+    fn_bundle_icu
+    fn_bundle_libs ~/relocatable/"postgres-${g_semver}-${g_target}"/lib/
+    fn_bundle_libs ~/relocatable/"psql-${g_semver}-${g_target}"/lib/
 
     echo ""
-    echo "Updating linker paths and resigning ..."
+    echo "Updating 'postgres+psql' linker paths and resigning ..."
+    echo "     and 'psql' linker paths and resigning ..."
     sleep 1
-    fn_patch_rpaths_recursively ~/relocatable/"postgres-${g_semver}-${g_target}"
+    fn_patch_rpaths_extensions ~/relocatable/"postgres-${g_semver}-${g_target}"
+    fn_patch_rpaths_libs ~/relocatable/"postgres-${g_semver}-${g_target}"
+    fn_patch_rpaths_libs ~/relocatable/"psql-${g_semver}-${g_target}"
 
     echo ""
-    echo "Packaging for distribution ..."
+    echo "Creating distributable packages for 'postgres+psql' and 'psql'"
     sleep 1
     fn_package
 
-    echo "done"
+    rm -rf ~/relocatable
+    echo "Done"
+
+    b_pad="$(echo "${g_target}" | tr '[:graph:]' ' ')"
+    echo ""
+    echo "To start from scratch, remove the following:"
+    echo "    ./postgresql-${g_ver}.tar.gz ${b_pad}# official source"
+    echo "    ./postgresql-${g_ver}-${g_target}/      # intermediate build files"
+    echo "    ./postgres-${g_ver}-${g_target}.tar.gz  # distributable server+client"
+    echo "    ./psql-${g_ver}-${g_target}.tar.gz      # distributable client"
+    echo ""
 ); }
 
-fn_deps() { (
+fn_install_build_deps() { (
     xcode-select --install 2> /dev/null || true
     if ! git --version > /dev/null; then
         echo ""
@@ -93,7 +118,7 @@ fn_deps() { (
     brew install llvm@"${b_clang_ver}" openssl@3 icu4c libedit lz4 zstd || true
 ); }
 
-fn_download() { (
+fn_download_pg() { (
     if ! test -f ./"postgresql-${g_ver}".tar.gz; then
         (
             cd /tmp/
@@ -101,13 +126,18 @@ fn_download() { (
         )
         mv /tmp/"postgresql-${g_ver}".tar.gz .
     fi
-    rm -rf ./"postgresql-${g_ver}-${g_target}"/
-    tar xvf ./"postgresql-${g_ver}".tar.gz
-    mv ./"postgresql-${g_ver}"/ ./"postgresql-${g_ver}-${g_target}"/
+
+    #rm -rf ./"postgresql-${g_ver}-${g_target}"/
+
+    if ! test -d ./"postgresql-${g_ver}-${g_target}"/; then
+        echo "Unpacking ./postgresql-${g_ver}.tar.gz ..."
+        tar xzf ./"postgresql-${g_ver}".tar.gz
+        mv ./"postgresql-${g_ver}"/ ./"postgresql-${g_ver}-${g_target}"/
+    fi
 ); }
 
 #shellcheck disable=SC2155
-fn_build() { (
+fn_build_pg() { (
     if ! command -v brew > /dev/null; then
         #shellcheck disable=SC2030,SC2031
         export PATH="$HOME/.local/opt/brew/sbin:$PATH"
@@ -143,6 +173,9 @@ fn_build() { (
 
     cd ./"postgresql-${g_ver}-${g_target}"/ || return 1
 
+    # Clean (uncomment when needed)
+    #make clean
+
     # Configure
 
     # turned on: llvm,lz4,ssl,zstd
@@ -151,31 +184,92 @@ fn_build() { (
     # built-in: -
     # custom-location: libedit,tzdata
     # not turned on: bonjour,gssapi,ldap,nls,ossp,pam,perl,python,tcl,xml,xslt
-    ./configure \
-        --prefix="${HOME}/relocatable/postgres-${g_semver}-${g_target}" \
-        --exec-prefix="${HOME}/relocatable/postgres-${g_semver}-${g_target}" \
-        --disable-rpath \
-        --with-libedit-preferred \
-        --with-llvm \
-        --with-lz4 \
-        --with-ssl=openssl \
-        --with-system-tzdata=/usr/share/zoneinfo \
-        --with-zstd \
-        --with-extra-version=" ${g_vendor} +icu,llvm-${b_clang_ver},openssl-3,readline,zlib -tzdata"
+    #
+    # Note:
+    #     'postgres' and 'pgsql' are special prefix strings for 'opt' builds
+    if ! test -f ./config.status; then
+        ./configure \
+            --prefix="${HOME}/relocatable/pgsql-${g_semver}-${g_target}" \
+            --exec-prefix="${HOME}/relocatable/pgsql-${g_semver}-${g_target}" \
+            --disable-rpath \
+            --with-libedit-preferred \
+            --with-llvm \
+            --with-lz4 \
+            --with-ssl=openssl \
+            --with-system-tzdata=/usr/share/zoneinfo \
+            --with-zstd \
+            --with-extra-version=" ${g_vendor} +icu,llvm-${b_clang_ver},openssl-3,readline,zlib -tzdata"
+    fi
 
     # Build
-    make clean
     make -j"$(nproc --ignore=1)"
+    for b_ext in $g_exts; do
+        (
+            echo ""
+            echo ""
+            echo "#### Building Extension ${b_ext} ####"
+            sleep 0.3
+            cd ./contrib/"${b_ext}"
+            make
+        )
+    done
+    for b_ext in $g_exts_only; do
+        (
+            echo ""
+            echo ""
+            echo "#### Building Extension ${b_ext} ####"
+            sleep 0.3
+            cd ./contrib/"${b_ext}"
+            make
+        )
+    done
 
     # Install
     rm -rf ~/relocatable
     mkdir -p ~/relocatable
+
+    # Server + Client
     make install
+    for b_ext in $g_exts; do
+        (
+            echo ""
+            echo ""
+            echo "#### Installing Extension ${b_ext} ####"
+            sleep 0.3
+            cd ./contrib/"${b_ext}"
+            make install
+        )
+    done
+    for b_ext in $g_exts_only; do
+        (
+            echo ""
+            echo ""
+            echo "#### Installing Extension ${b_ext} ####"
+            sleep 0.3
+            cd ./contrib/"${b_ext}"
+            make install
+        )
+    done
+    mv ~/relocatable/"pgsql-${g_semver}-${g_target}" ~/relocatable/"postgres-${g_semver}-${g_target}"
+    rm -rf ~/relocatable/"postgres-${g_semver}-${g_target}"/include
+
+    # (Mostly) Client Tools
+    b_client_targets="./src/bin/ ./src/include/ ./src/interfaces/"
+    # this excludes './doc/' due to failing linter errors
+    for b_target in ${b_client_targets}; do
+        echo ""
+        echo ""
+        echo "#### Installing client ${b_target} ####"
+        sleep 0.3
+        make -C "${b_target}" install
+    done
+    mv ~/relocatable/"pgsql-${g_semver}-${g_target}" ~/relocatable/"psql-${g_semver}-${g_target}"
+    rm -rf ~/relocatable/"psql-${g_semver}-${g_target}"/include
 ); }
 
-fn_copy_libs() { (
+fn_bundle_icu() { (
     if ! command -v brew > /dev/null; then
-        #shellcheck disable=SC2031
+        #shellcheck disable=SC2030,SC2031
         export PATH="$HOME/.local/opt/brew/sbin:$PATH"
         export PATH="$HOME/.local/opt/brew/bin:$PATH"
     fi
@@ -186,34 +280,44 @@ fn_copy_libs() { (
         "${b_icudir}"/lib/libicui18n*.dylib \
         "${b_icudir}"/lib/libicudata*.dylib \
         ~/relocatable/"postgres-${g_semver}-${g_target}"/lib/
+); }
+
+fn_bundle_libs() { (
+    a_pgqsl_dir="${1}"
+
+    if ! command -v brew > /dev/null; then
+        #shellcheck disable=SC2031
+        export PATH="$HOME/.local/opt/brew/sbin:$PATH"
+        export PATH="$HOME/.local/opt/brew/bin:$PATH"
+    fi
 
     b_lz4dir="$(brew --prefix lz4)"
-    cp -RPp \
-        "${b_lz4dir}"/lib/*.dylib \
-        ~/relocatable/"postgres-${g_semver}-${g_target}"/lib/
+    cp -RPp "${b_lz4dir}"/lib/*.dylib "${a_pgqsl_dir}"
 
     # readline for bsd/macos
     b_editdir="$(brew --prefix libedit)"
-    cp -RPp \
-        "${b_editdir}"/lib/*.dylib \
-        ~/relocatable/"postgres-${g_semver}-${g_target}"/lib/
+    cp -RPp "${b_editdir}"/lib/*.dylib "${a_pgqsl_dir}"
 
+    # macos' openssl isn't always compatible with mainline openssl
     b_ssldir="$(brew --prefix openssl@3)"
-    cp -RPp \
-        "${b_ssldir}"/lib/*.dylib \
-        ~/relocatable/"postgres-${g_semver}-${g_target}"/lib/
+    cp -RPp "${b_ssldir}"/lib/*.dylib "${a_pgqsl_dir}"
 
     # note: zlib is part of the macos base
 
     b_zstddir="$(brew --prefix zstd)"
-    cp -RPp \
-        "${b_zstddir}"/lib/*.dylib \
-        ~/relocatable/"postgres-${g_semver}-${g_target}"/lib/
+    cp -RPp "${b_zstddir}"/lib/*.dylib "${a_pgqsl_dir}"
 ); }
 
+# SIMPLE EXPLANATION
+#
+#     For each binary or library file, run otool:
+#         otool -L ./my-bin-or-lib
+#
+#     For each linked path embedded in the file, update it to the bundled path:
+#         install_name_tool -change <builtin-path> @loader_path/../lib/<lib> ./my-bin-or-lib
+#
 fn_patch_rpaths() { (
     a_file="${1}"
-    a_name="$(basename "${a_file}")"
 
     case "$a_file" in
         *.dylib)
@@ -221,6 +325,7 @@ fn_patch_rpaths() { (
             b_libs="$(otool -L "${a_file}" | tail -n +3 | grep '/Users/' | cut -f2 | cut -d' ' -f1)"
             ;;
         *)
+            # skip the name of the file, but get the linked non-system lib names
             b_libs="$(otool -L "${a_file}" | tail -n +2 | grep '/Users/' | cut -f2 | cut -d' ' -f1)"
             ;;
     esac
@@ -229,10 +334,6 @@ fn_patch_rpaths() { (
         echo "    updating ${a_file}"
         for b_lib in ${b_libs}; do
             b_name="$(basename "${b_lib}")"
-            if test "${b_name}" = "${a_name}"; then
-                #echo "        ${b_name} (self)"
-                continue
-            fi
 
             echo "        ${b_name}"
             b_path="@loader_path/../lib/${b_name}"
@@ -243,8 +344,16 @@ fn_patch_rpaths() { (
     codesign --force --sign - "$a_file"
 ); }
 
-fn_patch_rpaths_recursively() { (
+fn_patch_rpaths_extensions() { (
     a_dir="${1}"
+    for b_ext in $g_exts; do
+        fn_patch_rpaths "${a_dir}"/lib/"${b_ext}".dylib
+    done
+); }
+
+fn_patch_rpaths_libs() { (
+    a_dir="${1}"
+
     for b_file in "${a_dir}"/bin/*; do
         fn_patch_rpaths "${b_file}"
     done
@@ -254,12 +363,19 @@ fn_patch_rpaths_recursively() { (
     done
 ); }
 
+# In theory we could create a universal binary but... not worth it
 # lipo -create -output my_binary my_binary_arm64.o my_binary_x86_64.o
 
 fn_package() { (
-    tar czvf ./"postgres-${g_semver}-${g_target}".tar.gz \
+    echo ""
+    tar czf ./"postgres-${g_semver}-${g_target}".tar.gz \
         -C ~/relocatable/ ./"postgres-${g_semver}-${g_target}"/
-    echo ./"postgres-${g_semver}-${g_target}".tar.gz
+    echo "    ./postgres-${g_semver}-${g_target}.tar.gz"
+
+    tar czf ./"psql-${g_semver}-${g_target}".tar.gz \
+        -C ~/relocatable/ ./"psql-${g_semver}-${g_target}"/
+    echo "    ./psql-${g_semver}-${g_target}.tar.gz"
+    echo ""
 ); }
 
 main

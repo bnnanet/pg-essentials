@@ -10,6 +10,10 @@ g_llvmver="${POSTGRES_LLVM_VERSION:-15}"
 
 g_semver="${g_ver}.${g_patch}"
 
+#g_exts="$(ls ./cortrib/ | grep -v 'README|*.mk|perl|python|ossp|start-scripts|xml2')"
+g_exts="amcheck auth_delay auto_explain basebackup_to_shell basic_archive bloom btree_gin btree_gist citext cube dblink dict_int dict_xsyn earthdistance file_fdw fuzzystrmatch hstore isn lo ltree pageinspect passwordcheck pg_buffercache pg_freespacemap pg_prewarm pg_stat_statements pg_surgery pg_trgm pg_visibility pg_walinspect pgcrypto pgrowlocks pgstattuple postgres_fdw seg sslinfo tablefunc tcn test_decoding tsm_system_rows tsm_system_time unaccent"
+g_exts_only="intarray intagg oid2name spi vacuumlo"
+
 g_prof=""
 g_libc="gnu"
 if ldd /bin/ls | grep -q 'musl'; then
@@ -35,10 +39,10 @@ main() { (
     if test -z "${g_vendor}"; then
         echo ""
         echo "USAGE"
-        echo "    postgres-build-linux <vendor-name> <pg-version>"
+        echo "    pg-build-linux <vendor-name> <pg-version>"
         echo ""
         echo "EXAMPLE"
-        echo "    postgres-build-linux 'custom' 17.0"
+        echo "    pg-build-linux 'custom' 17.0"
         echo ""
         echo "ENVs"
         echo "    Use ENVs to set the (cosmetic) patch version and optional LLVM version"
@@ -50,44 +54,65 @@ main() { (
 
     echo ""
     echo "Installing build dependencies ..."
-    sleep 1
-    if command -v apt-get > /dev/null; then
-        fn_deps_apt
-    elif command -v apk > /dev/null; then
-        fn_deps_apk
-    else
-        echo "warn: unknown package manager: you moust install dependencies manually"
+    if ! test -e ./"postgresql-${g_ver}-${g_target}"; then
+        sleep 1
+        if command -v apt-get > /dev/null; then
+            fn_install_build_deps_apt
+        elif command -v apk > /dev/null; then
+            fn_install_build_deps_apk
+        else
+            echo "warn: unknown package manager: you moust install dependencies manually"
+        fi
     fi
 
     echo ""
-    echo "Downloading PostgreSQL source ..."
+    echo ""
+    echo "Downloading PostgreSQL ${g_ver} source ..."
     sleep 1
-    fn_download
+    fn_download_pg
 
     echo ""
-    echo "Building ..."
+    echo ""
+    echo "Building 'postgres+psql' in ./postgresql-${g_ver}-${g_target}/"
     sleep 1
-    fn_build
+    fn_build_pg
 
     echo ""
-    echo "Bundling dependencies ..."
+    echo "Bundling 'postgres+psql' libs in ~/relocatable/postgres-${g_semver}-${g_target}/lib/"
+    echo "     and 'psql' libs in ~/relocatable/psql-${g_ver}-${g_target}/lib/"
     sleep 1
-    fn_copy_libs
+    fn_bundle_icu
+    fn_bundle_libs ~/relocatable/"postgres-${g_semver}-${g_target}"/lib/
+    fn_bundle_libs ~/relocatable/"psql-${g_semver}-${g_target}"/lib/
 
     echo ""
-    echo "Updating linker paths and resigning ..."
+    echo "Updating 'postgres+psql' linker paths and resigning ..."
+    echo "     and 'psql' linker paths and resigning ..."
     sleep 1
-    fn_patch_rpaths
+    #fn_patch_rpath_extensions ~/relocatable/"postgres-${g_semver}-${g_target}"
+    fn_patch_rpath_libs_server ~/relocatable/"postgres-${g_semver}-${g_target}"
+    fn_patch_rpath_libs ~/relocatable/"postgres-${g_semver}-${g_target}"
+    fn_patch_rpath_libs ~/relocatable/"psql-${g_semver}-${g_target}"
 
     echo ""
-    echo "Packaging for distribution ..."
+    echo "Creating distributable packages for 'postgres+psql' and 'psql'"
     sleep 1
     fn_package
 
-    echo "done"
+    rm -rf ~/relocatable
+    echo "Done"
+
+    b_pad="$(echo "${g_target}" | tr '[:graph:]' ' ')"
+    echo ""
+    echo "To start from scratch, remove the following:"
+    echo "    ./postgresql-${g_ver}.tar.gz ${b_pad}# official source"
+    echo "    ./postgresql-${g_ver}-${g_target}/      # intermediate build files"
+    echo "    ./postgres-${g_ver}-${g_target}.tar.gz  # distributable server+client"
+    echo "    ./psql-${g_ver}-${g_target}.tar.gz      # distributable client"
+    echo ""
 ); }
 
-fn_deps_apt() { (
+fn_install_build_deps_apt() { (
     cmd_sudo=''
     if command -v sudo > /dev/null; then
         cmd_sudo='sudo'
@@ -105,7 +130,7 @@ fn_deps_apt() { (
         liblz4-dev libzstd-dev
 ); }
 
-fn_deps_apk() { (
+fn_install_build_deps_apk() { (
     cmd_sudo=''
     if command -v sudo > /dev/null; then
         cmd_sudo='sudo'
@@ -123,20 +148,25 @@ fn_deps_apk() { (
         icu-data-full icu-libs lz4 zlib zstd
 ); }
 
-fn_download() {
+fn_download_pg() { (
     if ! test -f ./"postgresql-${g_ver}".tar.gz; then
         (
             cd /tmp/
-            wget -c "https://ftp.postgresql.org/pub/source/v${g_ver}/postgresql-${g_ver}.tar.gz"
+            curl -L -O "https://ftp.postgresql.org/pub/source/v${g_ver}/postgresql-${g_ver}.tar.gz"
         )
         mv /tmp/"postgresql-${g_ver}".tar.gz .
     fi
-    rm -rf ./"postgresql-${g_ver}-${g_target}"/
-    tar xvf ./"postgresql-${g_ver}".tar.gz
-    mv ./"postgresql-${g_ver}"/ ./"postgresql-${g_ver}-${g_target}"/
-}
 
-fn_build() { (
+    #rm -rf ./"postgresql-${g_ver}-${g_target}"/
+
+    if ! test -d ./"postgresql-${g_ver}-${g_target}"/; then
+        echo "Unpacking ./postgresql-${g_ver}.tar.gz ..."
+        tar xzf ./"postgresql-${g_ver}".tar.gz
+        mv ./"postgresql-${g_ver}"/ ./"postgresql-${g_ver}-${g_target}"/
+    fi
+); }
+
+fn_build_pg() { (
     export CLANG="/usr/bin/clang-${g_llvmver}"
     export LLVM_CONFIG="/usr/bin/llvm-config-${g_llvmver}"
     if command -v apk > /dev/null; then
@@ -167,6 +197,9 @@ fn_build() { (
 
     cd ./"postgresql-${g_ver}-${g_target}"/ || return 1
 
+    # Clean (uncomment when needed)
+    #make clean
+
     # Configure
 
     # turned on: llvm,lz4,ssl,zstd
@@ -175,68 +208,131 @@ fn_build() { (
     # built-in: -
     # custom-location: tzdata
     # not turned on: gssapi,ldap,nls,ossp,pam,perl,python,selinux,systemd,tcl,xml,xslt
-    ./configure \
-        --prefix="${HOME}/relocatable/postgres-${g_semver}-${g_target}" \
-        --exec-prefix="${HOME}/relocatable/postgres-${g_semver}-${g_target}" \
-        --disable-rpath \
-        --with-llvm \
-        --with-lz4 \
-        --with-ssl=openssl \
-        --with-system-tzdata=/usr/share/zoneinfo \
-        --with-zstd \
-        --with-extra-version=" ${g_vendor} +icu,llvm-${g_llvmver},lz4,openssl-3,readline,zlib,zstd -tzdata"
+    if ! test -f ./config.status; then
+        ./configure \
+            --prefix="${HOME}/relocatable/pgsql-${g_semver}-${g_target}" \
+            --exec-prefix="${HOME}/relocatable/pgsql-${g_semver}-${g_target}" \
+            --disable-rpath \
+            --with-llvm \
+            --with-lz4 \
+            --with-ssl=openssl \
+            --with-system-tzdata=/usr/share/zoneinfo \
+            --with-zstd \
+            --with-extra-version=" ${g_vendor} +icu,llvm-${g_llvmver},lz4,openssl-3,readline,zlib,zstd -tzdata"
+    fi
 
     # Build
-    make clean
     make -j"$(nproc --ignore=1)"
+    for b_ext in $g_exts; do
+        (
+            echo ""
+            echo ""
+            echo "#### Building Extension ${b_ext} ####"
+            sleep 0.3
+            cd ./contrib/"${b_ext}"
+            make
+        )
+    done
+    for b_ext in $g_exts_only; do
+        (
+            echo ""
+            echo ""
+            echo "#### Building Extension ${b_ext} ####"
+            sleep 0.3
+            cd ./contrib/"${b_ext}"
+            make
+        )
+    done
 
     # Install
     rm -rf ~/relocatable
     mkdir -p ~/relocatable
+
+    # Server + Client
     make install
+    for b_ext in $g_exts; do
+        (
+            echo ""
+            echo ""
+            echo "#### Installing Extension ${b_ext} ####"
+            sleep 0.3
+            cd ./contrib/"${b_ext}"
+            make install
+        )
+    done
+    for b_ext in $g_exts_only; do
+        (
+            echo ""
+            echo ""
+            echo "#### Installing Extension ${b_ext} ####"
+            sleep 0.3
+            cd ./contrib/"${b_ext}"
+            make install
+        )
+    done
+    mv ~/relocatable/"pgsql-${g_semver}-${g_target}" ~/relocatable/"postgres-${g_semver}-${g_target}"
+    rm -rf ~/relocatable/"postgres-${g_semver}-${g_target}"/include
+
+    # (Mostly) Client Tools
+    b_client_targets="./src/bin/ ./src/include/ ./src/interfaces/"
+    # this excludes './doc/' due to failing linter errors
+    for b_target in ${b_client_targets}; do
+        echo ""
+        echo ""
+        echo "#### Installing client ${b_target} ####"
+        sleep 0.3
+        make -C "${b_target}" install
+    done
+    mv ~/relocatable/"pgsql-${g_semver}-${g_target}" ~/relocatable/"psql-${g_semver}-${g_target}"
+    rm -rf ~/relocatable/"psql-${g_semver}-${g_target}"/include
 ); }
 
-fn_copy_libs() { (
-    # Everything EXCEPT:
-    #   - llvm (due to size and number of items)
-    #   - openssl (for security)
-    #   - tzdata (due to ubiquiti)
-
+fn_bundle_icu() { (
     cp -RPp \
         "${g_libdir}"/libicuuc.so* \
         "${g_libdir}"/libicui18n.so* \
         "${g_libdir}"/libicudata.so* \
         ~/relocatable/"postgres-${g_semver}-${g_target}"/lib/ 2> /dev/null || true
+); }
 
-    cp -RPp \
-        "${g_libdir}"/liblz4.so* \
-        ~/relocatable/"postgres-${g_semver}-${g_target}"/lib/ 2> /dev/null || true
+fn_bundle_libs() { (
+    # Everything EXCEPT:
+    #   - llvm (due to size and number of items)
+    #   - openssl (for security)
+    #   - tzdata (due to ubiquiti)
 
-    cp -RPp \
-        "${g_libdir}"/libreadline.so* \
-        ~/relocatable/"postgres-${g_semver}-${g_target}"/lib/ 2> /dev/null || true
+    a_pgqsl_dir="${1}"
+
+    cp -RPp "${g_libdir}"/liblz4.so* "${a_pgqsl_dir}" 2> /dev/null || true
+    cp -RPp "${g_libdir}"/libreadline.so* "${a_pgqsl_dir}" 2> /dev/null || true
 
     if test -e /lib/libz.so; then
         # alpine installs libz.so to /lib/
-        cp -RPp \
-            /lib/libz.so* \
-            ~/relocatable/"postgres-${g_semver}-${g_target}"/lib/ 2> /dev/null || true
+        cp -RPp /lib/libz.so* "${a_pgqsl_dir}" 2> /dev/null || true
     else
-        cp -RPp \
-            "${g_libdir}"/libz.so* \
-            ~/relocatable/"postgres-${g_semver}-${g_target}"/lib/ 2> /dev/null || true
+        cp -RPp "${g_libdir}"/libz.so* "${a_pgqsl_dir}" 2> /dev/null || true
     fi
 
-    cp -RPp \
-        "${g_libdir}"/libzstd*.so* \
-        ~/relocatable/"postgres-${g_semver}-${g_target}"/lib/ 2> /dev/null || true
+    cp -RPp "${g_libdir}"/libzstd*.so* "${a_pgqsl_dir}" 2> /dev/null || true
 ); }
 
 fn_patch_rpath() { (
     patchelf --set-rpath '$ORIGIN/../lib' "${1}"
 ); }
 
-fn_patch_rpaths() { (
+fn_patch_rpath_libs_server() { (
+    b_pgdir="${HOME}/relocatable/postgres-${g_semver}-${g_target}"
+
+    fn_patch_rpath "${b_pgdir}"/lib/libicuuc.so.*.*
+    fn_patch_rpath "${b_pgdir}"/lib/libicui18n.so.*.*
+    fn_patch_rpath "${b_pgdir}"/lib/libicudata.so.*.*
+
+    # for b_ext in $g_exts; do
+    #     fn_patch_rpath "${b_pgdir}"/lib/"${b_ext}".so
+    # done
+); }
+
+fn_patch_rpath_libs() { (
     # Each of these can be debugged to ensure they don't link to other things
     #   readelf -d ~/relocatable/"postgres-${g_semver}-${g_target}"/lib/libfoo.so.0.0
     #
@@ -245,25 +341,24 @@ fn_patch_rpaths() { (
     #   libc.so.6, ld-linux-aarch64.so.1, libtinfo.so.6
     # but these are likely to exist on a standard system, and to match versions
 
-    b_pgdir="${HOME}/relocatable/postgres-${g_semver}-${g_target}"
+    a_pgdir="${1}"
 
-    fn_patch_rpath "${b_pgdir}"/lib/libicuuc.so.*.*
-    fn_patch_rpath "${b_pgdir}"/lib/libicui18n.so.*.*
-    fn_patch_rpath "${b_pgdir}"/lib/libicudata.so.*.*
-
-    fn_patch_rpath "${b_pgdir}"/lib/liblz4.so.*.*
-
-    fn_patch_rpath "${b_pgdir}"/lib/libreadline.so.*.*
-
-    fn_patch_rpath "${b_pgdir}"/lib/libz.so.*.*
-
-    fn_patch_rpath "${b_pgdir}"/lib/libzstd.so.*.*
+    fn_patch_rpath "${a_pgdir}"/lib/liblz4.so.*.*
+    fn_patch_rpath "${a_pgdir}"/lib/libreadline.so.*.*
+    fn_patch_rpath "${a_pgdir}"/lib/libz.so.*.*
+    fn_patch_rpath "${a_pgdir}"/lib/libzstd.so.*.*
 ); }
 
 fn_package() { (
-    tar czvf ./"postgres-${g_semver}-${g_target}".tar.gz \
+    echo ""
+    tar czf ./"postgres-${g_semver}-${g_target}".tar.gz \
         -C ~/relocatable/ ./"postgres-${g_semver}-${g_target}"/
-    echo ./"postgres-${g_semver}-${g_target}".tar.gz
+    echo "    ./postgres-${g_semver}-${g_target}.tar.gz"
+
+    tar czf ./"psql-${g_semver}-${g_target}".tar.gz \
+        -C ~/relocatable/ ./"psql-${g_semver}-${g_target}"/
+    echo "    ./psql-${g_semver}-${g_target}.tar.gz"
+    echo ""
 ); }
 
 main
