@@ -1,0 +1,18 @@
+#!/bin/sh
+set -e
+set -u
+
+g_scriptdir="$(dirname "$0")"
+
+case "$(uname -s)" in
+    Linux)
+        "${g_scriptdir}/pg-build-linux" "$@"
+        ;;
+    Darwin)
+        "${g_scriptdir}/pg-build-macos" "$@"
+        ;;
+    *)
+        echo "Unsupported OS: $(uname -s)" >&2
+        exit 1
+        ;;
+esac

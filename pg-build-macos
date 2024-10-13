@@ -1,0 +1,265 @@
+#!/bin/sh
+set -e
+set -u
+
+g_vendor="${1:-}"
+g_ver="${2:-}"
+g_patch="${POSTGRES_PATCH_VERSION:-0}"
+
+g_semver="${g_ver}.${g_patch}"
+
+g_prof=""
+g_libc=""
+# darwin
+g_platform="$(uname -s | tr '[:upper:]' '[:lower:]')" # darwin
+# x86_64 or arm64
+g_arch="$(uname -m)"
+if test "arm64" = "${g_arch}"; then
+    g_arch="aarch64"
+fi
+# aarch64-darwin
+g_target="${g_prof}${g_arch}-${g_platform}${g_libc}"
+
+main() { (
+    if test -z "${g_vendor}"; then
+        echo ""
+        echo "USAGE"
+        echo "    postgres-build-macos <vendor-name> <pg-version>"
+        echo ""
+        echo "EXAMPLE"
+        echo "    postgres-build-macos 'custom' 17.0"
+        echo ""
+        echo "ENVs"
+        echo "    Use ENVs to set the (cosmetic) patch version"
+        echo "    POSTGRES_PATCH_VERSION=0"
+        echo "    (the LLVM version will be set the same as Xcode clang)"
+        echo ""
+        return 1
+    fi
+
+    echo ""
+    echo "Installing build dependencies ..."
+    sleep 1
+    fn_deps
+
+    echo ""
+    echo "Downloading PostgreSQL source ..."
+    sleep 1
+    fn_download
+
+    echo ""
+    echo "Building ..."
+    sleep 1
+    fn_build
+
+    echo ""
+    echo "Bundling dependencies ..."
+    sleep 1
+    fn_copy_libs
+
+    echo ""
+    echo "Updating linker paths and resigning ..."
+    sleep 1
+    fn_patch_rpaths_recursively ~/relocatable/"postgres-${g_semver}-${g_target}"
+
+    echo ""
+    echo "Packaging for distribution ..."
+    sleep 1
+    fn_package
+
+    echo "done"
+); }
+
+fn_deps() { (
+    xcode-select --install 2> /dev/null || true
+    if ! git --version > /dev/null; then
+        echo ""
+        echo ""
+        echo "ERROR"
+        echo "    first install Xcode Tools, then try building again"
+        echo ""
+        return 1
+    fi
+
+    if ! command -v brew > /dev/null; then
+        curl https://webi.sh/brew | sh
+        #shellcheck disable=SC2030
+        export PATH="$HOME/.local/opt/brew/sbin:$PATH"
+        export PATH="$HOME/.local/opt/brew/bin:$PATH"
+    fi
+
+    b_clang_ver="$(clang --version | cut -d' ' -f4 | head -n 1 | cut -d'.' -f1)"
+    # note: this is always true for idempotency - installing again would otherwise cause non-zero exit status
+    brew install llvm@"${b_clang_ver}" openssl@3 icu4c libedit lz4 zstd || true
+); }
+
+fn_download() { (
+    if ! test -f ./"postgresql-${g_ver}".tar.gz; then
+        (
+            cd /tmp/
+            curl -L -O "https://ftp.postgresql.org/pub/source/v${g_ver}/postgresql-${g_ver}.tar.gz"
+        )
+        mv /tmp/"postgresql-${g_ver}".tar.gz .
+    fi
+    rm -rf ./"postgresql-${g_ver}-${g_target}"/
+    tar xvf ./"postgresql-${g_ver}".tar.gz
+    mv ./"postgresql-${g_ver}"/ ./"postgresql-${g_ver}-${g_target}"/
+); }
+
+#shellcheck disable=SC2155
+fn_build() { (
+    if ! command -v brew > /dev/null; then
+        #shellcheck disable=SC2030,SC2031
+        export PATH="$HOME/.local/opt/brew/sbin:$PATH"
+        export PATH="$HOME/.local/opt/brew/bin:$PATH"
+    fi
+
+    b_clang_ver="$(clang --version | cut -d' ' -f4 | head -n 1 | cut -d'.' -f1)"
+
+    export CLANG="$(brew --prefix llvm@"${b_clang_ver}")/bin/clang"
+    export LLVM_CONFIG="$(brew --prefix llvm@"${b_clang_ver}")/bin/llvm-config"
+
+    export ICU_CFLAGS="-I$(brew --prefix icu4c)/include"
+    export ICU_LIBS="-L$(brew --prefix icu4c)/lib -licui18n -licuuc -licudata"
+
+    export LZ4_CFLAGS="-I$(brew --prefix lz4)/include"
+    export LZ4_LIBS="-L$(brew --prefix lz4)/lib -llz4"
+
+    export ZSTD_CFLAGS="-I$(brew --prefix zstd)/include"
+    export ZSTD_LIBS="-L$(brew --prefix zstd)/lib -lzstd"
+
+    #export CFLAGS="-march=x86-64-v3 -mtune=generic -O2 -pipe -fstack-protector-strong -flto=auto"
+    #export CFLAGS="-arch x86_64 -arch arm64 -mtune=generic -O2 -pipe -fstack-protector-strong -flto=auto"
+    export CFLAGS="-I$(brew --prefix llvm@"${b_clang_ver}")/include -I$(brew --prefix openssl@3)/include -I$(brew --prefix libedit)/include"
+    export CXXFLAGS="${CFLAGS}"
+    export CPPFLAGS="${CFLAGS}"
+
+    export LDFLAGS="-L$(brew --prefix llvm@"${b_clang_ver}")/lib -L$(brew --prefix openssl@3)/lib -L$(brew --prefix libedit)/lib"
+
+    # DYLD_RUN_PATH may be removed by sip
+    #export DYLD_RUN_PATH="@loader_path/../lib"
+    # DYLD_FALLBACK_LIBRARY_PATH may cause unexpected conflicts
+    #export DYLD_FALLBACK_LIBRARY_PATH="@loader_path/../lib"
+
+    cd ./"postgresql-${g_ver}-${g_target}"/ || return 1
+
+    # Configure
+
+    # turned on: llvm,lz4,ssl,zstd
+    # disabled: -
+    # not turned off: icu,readline,zlib,spinlocks,atomics
+    # built-in: -
+    # custom-location: libedit,tzdata
+    # not turned on: bonjour,gssapi,ldap,nls,ossp,pam,perl,python,tcl,xml,xslt
+    ./configure \
+        --prefix="${HOME}/relocatable/postgres-${g_semver}-${g_target}" \
+        --exec-prefix="${HOME}/relocatable/postgres-${g_semver}-${g_target}" \
+        --disable-rpath \
+        --with-libedit-preferred \
+        --with-llvm \
+        --with-lz4 \
+        --with-ssl=openssl \
+        --with-system-tzdata=/usr/share/zoneinfo \
+        --with-zstd \
+        --with-extra-version=" ${g_vendor} +icu,llvm-${b_clang_ver},openssl-3,readline,zlib -tzdata"
+
+    # Build
+    make clean
+    make -j"$(nproc --ignore=1)"
+
+    # Install
+    rm -rf ~/relocatable
+    mkdir -p ~/relocatable
+    make install
+); }
+
+fn_copy_libs() { (
+    if ! command -v brew > /dev/null; then
+        #shellcheck disable=SC2031
+        export PATH="$HOME/.local/opt/brew/sbin:$PATH"
+        export PATH="$HOME/.local/opt/brew/bin:$PATH"
+    fi
+
+    b_icudir="$(brew --prefix icu4c)"
+    cp -RPp \
+        "${b_icudir}"/lib/libicuuc*.dylib \
+        "${b_icudir}"/lib/libicui18n*.dylib \
+        "${b_icudir}"/lib/libicudata*.dylib \
+        ~/relocatable/"postgres-${g_semver}-${g_target}"/lib/
+
+    b_lz4dir="$(brew --prefix lz4)"
+    cp -RPp \
+        "${b_lz4dir}"/lib/*.dylib \
+        ~/relocatable/"postgres-${g_semver}-${g_target}"/lib/
+
+    # readline for bsd/macos
+    b_editdir="$(brew --prefix libedit)"
+    cp -RPp \
+        "${b_editdir}"/lib/*.dylib \
+        ~/relocatable/"postgres-${g_semver}-${g_target}"/lib/
+
+    b_ssldir="$(brew --prefix openssl@3)"
+    cp -RPp \
+        "${b_ssldir}"/lib/*.dylib \
+        ~/relocatable/"postgres-${g_semver}-${g_target}"/lib/
+
+    # note: zlib is part of the macos base
+
+    b_zstddir="$(brew --prefix zstd)"
+    cp -RPp \
+        "${b_zstddir}"/lib/*.dylib \
+        ~/relocatable/"postgres-${g_semver}-${g_target}"/lib/
+); }
+
+fn_patch_rpaths() { (
+    a_file="${1}"
+    a_name="$(basename "${a_file}")"
+
+    case "$a_file" in
+        *.dylib)
+            # skip the name of the file, and the first line (its self-link)
+            b_libs="$(otool -L "${a_file}" | tail -n +3 | grep '/Users/' | cut -f2 | cut -d' ' -f1)"
+            ;;
+        *)
+            b_libs="$(otool -L "${a_file}" | tail -n +2 | grep '/Users/' | cut -f2 | cut -d' ' -f1)"
+            ;;
+    esac
+
+    if test -n "${b_libs}"; then
+        echo "    updating ${a_file}"
+        for b_lib in ${b_libs}; do
+            b_name="$(basename "${b_lib}")"
+            if test "${b_name}" = "${a_name}"; then
+                #echo "        ${b_name} (self)"
+                continue
+            fi
+
+            echo "        ${b_name}"
+            b_path="@loader_path/../lib/${b_name}"
+            install_name_tool -change "${b_lib}" "${b_path}" "${a_file}"
+        done
+    fi
+
+    codesign --force --sign - "$a_file"
+); }
+
+fn_patch_rpaths_recursively() { (
+    a_dir="${1}"
+    for b_file in "${a_dir}"/bin/*; do
+        fn_patch_rpaths "${b_file}"
+    done
+
+    for b_file in "${a_dir}"/lib/*.*.dylib; do
+        fn_patch_rpaths "${b_file}"
+    done
+); }
+
+# lipo -create -output my_binary my_binary_arm64.o my_binary_x86_64.o
+
+fn_package() { (
+    tar czvf ./"postgres-${g_semver}-${g_target}".tar.gz \
+        -C ~/relocatable/ ./"postgres-${g_semver}-${g_target}"/
+    echo ./"postgres-${g_semver}-${g_target}".tar.gz
+); }
+
+main

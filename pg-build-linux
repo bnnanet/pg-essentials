@@ -1,0 +1,269 @@
+#!/bin/sh
+#shellcheck disable=SC2016,SC2155
+set -e
+set -u
+
+g_vendor="${1:-}"
+g_ver="${2:-}"
+g_patch="${POSTGRES_PATCH_VERSION:-0}"
+g_llvmver="${POSTGRES_LLVM_VERSION:-15}"
+
+g_semver="${g_ver}.${g_patch}"
+
+g_prof=""
+g_libc="gnu"
+if ldd /bin/ls | grep -q 'musl'; then
+    g_libc="musl"
+fi
+
+# linux
+g_platform="$(uname -s | tr '[:upper:]' '[:lower:]')" # darwin
+# x86_64 or arm64
+g_arch="$(uname -m)"
+if test "arm64" = "${g_arch}"; then
+    g_arch="aarch64"
+fi
+# aarch64-linux
+g_target="${g_prof}${g_arch}-${g_platform}-${g_libc}"
+
+g_libdir="/usr/lib/${g_arch}-linux-${g_libc}"
+if ! test -e "${g_libdir}"; then
+    g_libdir="/usr/lib"
+fi
+
+main() { (
+    if test -z "${g_vendor}"; then
+        echo ""
+        echo "USAGE"
+        echo "    postgres-build-linux <vendor-name> <pg-version>"
+        echo ""
+        echo "EXAMPLE"
+        echo "    postgres-build-linux 'custom' 17.0"
+        echo ""
+        echo "ENVs"
+        echo "    Use ENVs to set the (cosmetic) patch version and optional LLVM version"
+        echo "    POSTGRES_PATCH_VERSION=0"
+        echo "    POSTGRES_LLVM_VERSION=15"
+        echo ""
+        return 1
+    fi
+
+    echo ""
+    echo "Installing build dependencies ..."
+    sleep 1
+    if command -v apt-get > /dev/null; then
+        fn_deps_apt
+    elif command -v apk > /dev/null; then
+        fn_deps_apk
+    else
+        echo "warn: unknown package manager: you moust install dependencies manually"
+    fi
+
+    echo ""
+    echo "Downloading PostgreSQL source ..."
+    sleep 1
+    fn_download
+
+    echo ""
+    echo "Building ..."
+    sleep 1
+    fn_build
+
+    echo ""
+    echo "Bundling dependencies ..."
+    sleep 1
+    fn_copy_libs
+
+    echo ""
+    echo "Updating linker paths and resigning ..."
+    sleep 1
+    fn_patch_rpaths
+
+    echo ""
+    echo "Packaging for distribution ..."
+    sleep 1
+    fn_package
+
+    echo "done"
+); }
+
+fn_deps_apt() { (
+    cmd_sudo=''
+    if command -v sudo > /dev/null; then
+        cmd_sudo='sudo'
+    fi
+
+    $cmd_sudo apt-get update
+    $cmd_sudo apt-get install -y \
+        tzdata \
+        wget \
+        build-essential bison flex \
+        binutils patchelf \
+        "clang-${g_llvmver}" "llvm-${g_llvmver}-dev" \
+        libicu-dev libreadline-dev zlib1g-dev \
+        libssl-dev \
+        liblz4-dev libzstd-dev
+); }
+
+fn_deps_apk() { (
+    cmd_sudo=''
+    if command -v sudo > /dev/null; then
+        cmd_sudo='sudo'
+    fi
+
+    $cmd_sudo apk update
+    $cmd_sudo apk add \
+        openssl tzdata \
+        wget \
+        alpine-sdk bison flex perl \
+        binutils patchelf \
+        "clang${g_llvmver}" "llvm${g_llvmver}-dev" \
+        icu-dev readline-dev zlib-dev \
+        openssl-dev lz4-dev zstd-dev \
+        icu-data-full icu-libs lz4 zlib zstd
+); }
+
+fn_download() {
+    if ! test -f ./"postgresql-${g_ver}".tar.gz; then
+        (
+            cd /tmp/
+            wget -c "https://ftp.postgresql.org/pub/source/v${g_ver}/postgresql-${g_ver}.tar.gz"
+        )
+        mv /tmp/"postgresql-${g_ver}".tar.gz .
+    fi
+    rm -rf ./"postgresql-${g_ver}-${g_target}"/
+    tar xvf ./"postgresql-${g_ver}".tar.gz
+    mv ./"postgresql-${g_ver}"/ ./"postgresql-${g_ver}-${g_target}"/
+}
+
+fn_build() { (
+    export CLANG="/usr/bin/clang-${g_llvmver}"
+    export LLVM_CONFIG="/usr/bin/llvm-config-${g_llvmver}"
+    if command -v apk > /dev/null; then
+        export LLVM_CONFIG="/usr/bin/llvm${g_llvmver}-config"
+    fi
+
+    export ICU_CFLAGS="-I/usr/include"
+    export ICU_LIBS="-L${g_libdir} -licui18n -licuuc -licudata"
+
+    export LZ4_CFLAGS="-I/usr/include"
+    export LZ4_LIBS="-L${g_libdir} -llz4"
+
+    export ZSTD_CFLAGS="-I/usr/include"
+    export ZSTD_LIBS="-L${g_libdir} -lzstd"
+
+    b_arch="$(echo "${g_arch}" | tr _ -)"
+    if test "${b_arch}" = "x86_64"; then
+        b_arch="x86_64_v2"
+    elif test "${b_arch}" = "aarch64"; then
+        b_arch="armv8-a"
+    fi
+    export CFLAGS="-march=${b_arch} -mtune=generic -O2 -pipe -fstack-protector-strong -flto=auto -I/usr/include"
+    export CXXFLAGS="${CFLAGS}"
+    export CPPFLAGS="${CFLAGS}"
+    export LDFLAGS="-L${g_libdir}"
+
+    export LD_RUN_PATH='$ORIGIN/../lib'
+
+    cd ./"postgresql-${g_ver}-${g_target}"/ || return 1
+
+    # Configure
+
+    # turned on: llvm,lz4,ssl,zstd
+    # disabled: -
+    # not turned off: icu,readline,zlib,spinlocks,atomics
+    # built-in: -
+    # custom-location: tzdata
+    # not turned on: gssapi,ldap,nls,ossp,pam,perl,python,selinux,systemd,tcl,xml,xslt
+    ./configure \
+        --prefix="${HOME}/relocatable/postgres-${g_semver}-${g_target}" \
+        --exec-prefix="${HOME}/relocatable/postgres-${g_semver}-${g_target}" \
+        --disable-rpath \
+        --with-llvm \
+        --with-lz4 \
+        --with-ssl=openssl \
+        --with-system-tzdata=/usr/share/zoneinfo \
+        --with-zstd \
+        --with-extra-version=" ${g_vendor} +icu,llvm-${g_llvmver},lz4,openssl-3,readline,zlib,zstd -tzdata"
+
+    # Build
+    make clean
+    make -j"$(nproc --ignore=1)"
+
+    # Install
+    rm -rf ~/relocatable
+    mkdir -p ~/relocatable
+    make install
+); }
+
+fn_copy_libs() { (
+    # Everything EXCEPT:
+    #   - llvm (due to size and number of items)
+    #   - openssl (for security)
+    #   - tzdata (due to ubiquiti)
+
+    cp -RPp \
+        "${g_libdir}"/libicuuc.so* \
+        "${g_libdir}"/libicui18n.so* \
+        "${g_libdir}"/libicudata.so* \
+        ~/relocatable/"postgres-${g_semver}-${g_target}"/lib/ 2> /dev/null || true
+
+    cp -RPp \
+        "${g_libdir}"/liblz4.so* \
+        ~/relocatable/"postgres-${g_semver}-${g_target}"/lib/ 2> /dev/null || true
+
+    cp -RPp \
+        "${g_libdir}"/libreadline.so* \
+        ~/relocatable/"postgres-${g_semver}-${g_target}"/lib/ 2> /dev/null || true
+
+    if test -e /lib/libz.so; then
+        # alpine installs libz.so to /lib/
+        cp -RPp \
+            /lib/libz.so* \
+            ~/relocatable/"postgres-${g_semver}-${g_target}"/lib/ 2> /dev/null || true
+    else
+        cp -RPp \
+            "${g_libdir}"/libz.so* \
+            ~/relocatable/"postgres-${g_semver}-${g_target}"/lib/ 2> /dev/null || true
+    fi
+
+    cp -RPp \
+        "${g_libdir}"/libzstd*.so* \
+        ~/relocatable/"postgres-${g_semver}-${g_target}"/lib/ 2> /dev/null || true
+); }
+
+fn_patch_rpath() { (
+    patchelf --set-rpath '$ORIGIN/../lib' "${1}"
+); }
+
+fn_patch_rpaths() { (
+    # Each of these can be debugged to ensure they don't link to other things
+    #   readelf -d ~/relocatable/"postgres-${g_semver}-${g_target}"/lib/libfoo.so.0.0
+    #
+    # They each still rely on slow-changing libraries, such as:
+    #   libstdc++.so.6, libm.so.6, libgcc_s.so.1,
+    #   libc.so.6, ld-linux-aarch64.so.1, libtinfo.so.6
+    # but these are likely to exist on a standard system, and to match versions
+
+    b_pgdir="${HOME}/relocatable/postgres-${g_semver}-${g_target}"
+
+    fn_patch_rpath "${b_pgdir}"/lib/libicuuc.so.*.*
+    fn_patch_rpath "${b_pgdir}"/lib/libicui18n.so.*.*
+    fn_patch_rpath "${b_pgdir}"/lib/libicudata.so.*.*
+
+    fn_patch_rpath "${b_pgdir}"/lib/liblz4.so.*.*
+
+    fn_patch_rpath "${b_pgdir}"/lib/libreadline.so.*.*
+
+    fn_patch_rpath "${b_pgdir}"/lib/libz.so.*.*
+
+    fn_patch_rpath "${b_pgdir}"/lib/libzstd.so.*.*
+); }
+
+fn_package() { (
+    tar czvf ./"postgres-${g_semver}-${g_target}".tar.gz \
+        -C ~/relocatable/ ./"postgres-${g_semver}-${g_target}"/
+    echo ./"postgres-${g_semver}-${g_target}".tar.gz
+); }
+
+main
