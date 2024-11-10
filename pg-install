@@ -83,7 +83,7 @@ main() { (
 
     g_pgver="${1:-}"
 
-    fn_find_or_install_pg "${g_pgver}" >&2
+    fn_pg_find_or_install "${g_pgver}" >&2
     # command -v psql
     # /usr/lib/postgresql/16/bin/psql
 
