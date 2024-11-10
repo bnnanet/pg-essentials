@@ -30,6 +30,10 @@ fn_serviceman_find_or_install() { (
 ); }
 
 fn_init_local_db() { (
+    if test -f ~/.local/share/postgres/var/PG_VERSION; then
+        return 0
+    fi
+
     mkdir -p ~/.local/share/postgres/var/
 
     # Default config at:
