@@ -30,7 +30,7 @@ fn_serviceman_find_or_install() { (
 ); }
 
 fn_init_local_db() { (
-    mkdir -p ~/.local/share/postgres/var/run/
+    mkdir -p ~/.local/share/postgres/var/
 
     # Default config at:
     #   /etc/postgresql/16/main/pg_hba.conf
