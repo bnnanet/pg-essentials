@@ -56,10 +56,16 @@ fn_serviceman_add_pg() { (
     # if run as a login service:
     # sudo loginctl enable-linger "$(id -u -n)"
 
-    ${g_sudo} env PATH="${PATH}" \
-        serviceman add --name "postgres-as-${b_user}" --path "${PATH}" \
-        --system --username "${b_user}" -- \
-        postgres -D "${HOME}/.local/share/postgres/var" -p "${b_port}"
+    b_os="$(uname -s)"
+    if test "${b_os}" = 'Darwin'; then
+        serviceman add --name "postgres" --path "${PATH}" -- \
+            postgres -D "${HOME}/.local/share/postgres/var" -p "${b_port}"
+    else
+        ${g_sudo} env PATH="${PATH}" \
+            serviceman add --name "postgres-as-${b_user}" --path "${PATH}" \
+            --system --username "${b_user}" -- \
+            postgres -D "${HOME}/.local/share/postgres/var" -p "${b_port}"
+    fi
 ); }
 
 main() { (
