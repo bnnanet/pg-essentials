@@ -121,7 +121,7 @@ fn_install_build_deps_apt() { (
     $cmd_sudo apt-get update
     $cmd_sudo apt-get install -y \
         tzdata \
-        wget \
+        curl wget \
         build-essential bison flex \
         binutils patchelf \
         "clang-${g_llvmver}" "llvm-${g_llvmver}-dev" \
@@ -139,7 +139,7 @@ fn_install_build_deps_apk() { (
     $cmd_sudo apk update
     $cmd_sudo apk add \
         openssl tzdata \
-        wget \
+        curl wget \
         alpine-sdk bison flex perl \
         binutils patchelf \
         "clang${g_llvmver}" "llvm${g_llvmver}-dev" \
