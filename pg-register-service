@@ -24,9 +24,10 @@ if command -v sudo > /dev/null; then
 fi
 
 fn_serviceman_find_or_install() { (
-    if ! command -v serviceman > /dev/null; then
-        curl --fail-with-body -sS https://webi.sh/serviceman | sh
-    fi
+    # if ! command -v serviceman > /dev/null; then
+    # Get the latest serviceman
+    curl --fail-with-body -sS https://webi.sh/serviceman@0.x | sh
+    # fi
 ); }
 
 fn_init_local_db() { (
@@ -58,12 +59,10 @@ fn_serviceman_add_pg() { (
 
     b_os="$(uname -s)"
     if test "${b_os}" = 'Darwin'; then
-        serviceman add --name "postgres" --path "${PATH}" -- \
+        serviceman add --name "postgres" -- \
             postgres -D "${HOME}/.local/share/postgres/var" -p "${b_port}"
     else
-        ${g_sudo} env PATH="${PATH}" \
-            serviceman add --name "postgres-as-${b_user}" --path "${PATH}" \
-            --system --username "${b_user}" -- \
+        serviceman add --name "postgres-as-${b_user}" --user "${b_user}" -- \
             postgres -D "${HOME}/.local/share/postgres/var" -p "${b_port}"
     fi
 ); }
