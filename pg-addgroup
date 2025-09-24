@@ -6,7 +6,7 @@ fn_help() { (
     echo "pg-addgroup v1.0.0 - add a group role to hba for remote users with samename dbs"
     echo ""
     echo "USAGE"
-    echo "    pg-addgroup [hostssl|host|etc] [group-name] [pg-port]"
+    echo "    pg-addgroup [hostssl|host|local|...] [group-name] [pg-port]"
     echo ""
     echo "EXAMPLE"
     echo "    pg-addgroup hostssl remote_users 5432"
@@ -36,11 +36,18 @@ fn_pg_create_role() { (
 
     echo "Updating ~/.local/share/postgres/var/pg_hba.conf to allow '${a_pgrole}' users to login and access their own db..."
     # 'host' instead of 'hostssl' since the decryption may happen at the SNI router
+
     if ! grep -q -F "${a_pgrole}" ~/.local/share/postgres/var/pg_hba.conf; then
-        echo "# Allow ${a_pgrole} to connect remotely over the internet
+        if test "${a_conn_type}" = 'local'; then
+            echo "# Allow ${a_pgrole} to connect locally via unix socket
+${a_conn_type} sameuser         +${a_pgrole}                                scram-sha-256" \
+                >> ~/.local/share/postgres/var/pg_hba.conf
+        else
+            echo "# Allow ${a_pgrole} to connect remotely over the internet
 ${a_conn_type} sameuser         +${a_pgrole}        0.0.0.0/0               scram-sha-256
 ${a_conn_type} sameuser         +${a_pgrole}        ::0/0                   scram-sha-256" \
-            >> ~/.local/share/postgres/var/pg_hba.conf
+                >> ~/.local/share/postgres/var/pg_hba.conf
+        fi
     fi
 ); }
 
@@ -50,6 +57,9 @@ fn_rc_restart_pg() { (
         ${g_sudo} systemctl restart postgres
     elif command -v rc-service > /dev/null; then
         ${g_sudo} rc-service postgres restart
+    elif command -v launchctl > /dev/null; then
+        launchctl unload ~/Library/LaunchAgents/postgres.plist
+        launchctl load ~/Library/LaunchAgents/postgres.plist
     else
         ${g_sudo} killall postgres
     fi
