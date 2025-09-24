@@ -40,8 +40,11 @@ fn_pg_create_db() { (
     echo "CREATE ROLE \"${b_db}\" LOGIN INHERIT IN ROLE \"${b_group}\" ENCRYPTED PASSWORD '${b_pw}';" |
         psql "postgres://postgres:postgres@localhost:${b_port}/postgres" -f -
 
-    echo "Granting '${b_db}' access to its own (same-name) database ..."
-    echo "GRANT ALL PRIVILEGES ON DATABASE \"${b_db}\" to \"${b_db}\";" |
+    echo "Granting '${b_db}' access and ownership to its own (same-name) database ..."
+    {
+        echo "GRANT ALL PRIVILEGES ON DATABASE \"${b_db}\" to \"${b_db}\";"
+        echo "ALTER DATABASE \"${b_db}\" OWNER TO \"${b_db}\";"
+    } |
         psql "postgres://postgres:postgres@localhost:${b_port}/postgres" -f -
 ); }
 
