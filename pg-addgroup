@@ -3,20 +3,24 @@ set -e
 set -u
 
 fn_help() { (
-    echo "pg-addgroup v1.0.0 - add a group role to hba for remote users with samename dbs"
+    echo "pg-addgroup v1.1.2 - add a group role to hba for remote users with samename dbs"
     echo ""
     echo "USAGE"
     echo "    pg-addgroup [hostssl|host|local|localhost|...] [group-name] [pg-port]"
     echo ""
-    echo "EXAMPLE"
-    echo "    pg-addgroup hostssl remote_users 5432"
+    echo "EXAMPLES"
+    echo "    pg-addgroup  hostssl    'remote_users'  5432"
+    echo "    pg-addgroup  host       'subnet_users'  5432"
+    echo "    pg-addgroup  localhost  'local_users'   5432"
+    echo "    pg-addgroup  local      'unix_users'    5432"
     echo ""
     echo "NOTE"
     echo "    'localhost' is an alias for 'host' using 127.0.0.1/32"
     echo "    use 'host' rather than 'hostssl' if you terminate postgres' tls via proxy"
+    echo "    (and limit to a specific ip range / subnet if there are any public bindings)"
     echo ""
     echo "COPYING"
-    echo "    Copyright (c) 2024 AJ ONeal <aj@bnna.net>"
+    echo "    Copyright (c) 2024-2025 AJ ONeal <aj@bnna.net>"
     echo "    Licensed under the MPL-2.0"
 ); }
 
