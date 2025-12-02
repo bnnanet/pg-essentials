@@ -271,7 +271,6 @@ fn_build_pg() { (
         )
     done
     mv ~/relocatable/"pgsql-${g_semver}-${g_target}" ~/relocatable/"postgres-${g_semver}-${g_target}"
-    rm -rf ~/relocatable/"postgres-${g_semver}-${g_target}"/include
 
     # (Mostly) Client Tools
     b_client_targets="./src/bin/ ./src/include/ ./src/interfaces/"
@@ -284,6 +283,7 @@ fn_build_pg() { (
         make -C "${b_target}" install
     done
     mv ~/relocatable/"pgsql-${g_semver}-${g_target}" ~/relocatable/"psql-${g_semver}-${g_target}"
+    # include is only needed to build server extensions, not for the client
     rm -rf ~/relocatable/"psql-${g_semver}-${g_target}"/include
 ); }
 
