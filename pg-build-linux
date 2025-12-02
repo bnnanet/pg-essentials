@@ -8,7 +8,7 @@ g_version='v1.1.3'
 g_vendor="${1:-}"
 g_ver="${2:-}"
 g_patch="${POSTGRES_PATCH_VERSION:-0}"
-g_llvmver="${POSTGRES_LLVM_VERSION:-15}"
+g_llvmver="${POSTGRES_LLVM_VERSION:-20}"
 
 g_semver="${g_ver}.${g_patch}"
 
@@ -49,12 +49,12 @@ main() { (
             echo "    pg-build-linux <vendor-name> <pg-version>"
             echo ""
             echo "EXAMPLE"
-            echo "    pg-build-linux 'custom' 17.0"
+            echo "    pg-build-linux 'custom' 18.1"
             echo ""
             echo "ENVs"
             echo "    Use ENVs to set the (cosmetic) patch version and optional LLVM version"
             echo "    POSTGRES_PATCH_VERSION=0"
-            echo "    POSTGRES_LLVM_VERSION=15"
+            echo "    POSTGRES_LLVM_VERSION=20"
             echo ""
             return 1
             ;;

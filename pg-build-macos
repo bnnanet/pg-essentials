@@ -38,7 +38,7 @@ main() { (
             echo "    pg-build-macos <vendor-name> <pg-version>"
             echo ""
             echo "EXAMPLE"
-            echo "    pg-build-macos 'custom' 17.0"
+            echo "    pg-build-macos 'custom' 18.1"
             echo ""
             echo "ENVs"
             echo "    Use ENVs to set the (cosmetic) patch version"

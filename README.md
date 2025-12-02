@@ -31,7 +31,7 @@ USAGE
     postgres-build <vendor-name> <pg-version>
 
 EXAMPLE
-    postgres-build 'custom' 17.0
+    postgres-build 'custom' 18.1
 ```
 
 \* it's not really _static_, but rather _bundled_ or _vendored_ - the dependencies are included in the `./lib/` folder.
