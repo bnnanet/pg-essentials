@@ -2,8 +2,10 @@
 set -e
 set -u
 
+g_version="v1.0.1"
+
 fn_help() { (
-    echo "pg-install v1.0.0 - installs postgres via apt-get or apk"
+    echo "pg-install ${g_version} - installs postgres via apt-get or apk"
     echo ""
     echo "USAGE"
     echo "    pg-install <version>"

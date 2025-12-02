@@ -2,8 +2,10 @@
 set -e
 set -u
 
+g_version="v1.1.3"
+
 fn_help() { (
-    echo "pg-addgroup v1.1.2 - add a group role to hba for remote users with samename dbs"
+    echo "pg-addgroup ${g_version} - add a group role to hba for remote users with samename dbs"
     echo ""
     echo "USAGE"
     echo "    pg-addgroup [hostssl|host|local|localhost|...] [group-name] [pg-port]"

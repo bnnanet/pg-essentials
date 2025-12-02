@@ -2,8 +2,10 @@
 set -e
 set -u
 
+g_version="v1.0.1"
+
 fn_help() { (
-    echo "psql-backup v1.0.0 - creates portable (across instances) SQL schema & data backups"
+    echo "psql-backup ${g_version} - creates portable (across instances) SQL schema & data backups"
     echo ""
     echo "USAGE"
     echo "    psql-backup <user> [host] [port] [dbname]"

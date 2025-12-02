@@ -2,6 +2,8 @@
 set -e
 set -u
 
+g_version='v1.1.3'
+
 g_vendor="${1:-}"
 g_ver="${2:-}"
 g_patch="${POSTGRES_PATCH_VERSION:-0}"
@@ -25,21 +27,27 @@ fi
 g_target="${g_prof}${g_arch}-${g_platform}${g_libc}"
 
 main() { (
-    if test -z "${g_vendor}"; then
-        echo ""
-        echo "USAGE"
-        echo "    pg-build-macos <vendor-name> <pg-version>"
-        echo ""
-        echo "EXAMPLE"
-        echo "    pg-build-macos 'custom' 17.0"
-        echo ""
-        echo "ENVs"
-        echo "    Use ENVs to set the (cosmetic) patch version"
-        echo "    POSTGRES_PATCH_VERSION=0"
-        echo "    (the LLVM version will be set the same as Xcode clang)"
-        echo ""
-        return 1
-    fi
+    case "${g_vendor}" in
+        -V | --version | version)
+            echo "pg-build-macos ${g_version}"
+            return 0
+            ;;
+        "" | --help | help)
+            echo ""
+            echo "USAGE"
+            echo "    pg-build-macos <vendor-name> <pg-version>"
+            echo ""
+            echo "EXAMPLE"
+            echo "    pg-build-macos 'custom' 17.0"
+            echo ""
+            echo "ENVs"
+            echo "    Use ENVs to set the (cosmetic) patch version"
+            echo "    POSTGRES_PATCH_VERSION=0"
+            echo "    (the LLVM version will be set the same as Xcode clang)"
+            echo ""
+            return 1
+            ;;
+    esac
 
     echo ""
     echo ""

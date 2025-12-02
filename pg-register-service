@@ -3,9 +3,11 @@
 set -e
 set -u
 
+g_version='v1.0.1'
+
 fn_help() { (
     a_user=${1:-}
-    echo "pg-register-service v1.0.0 - register a postgres daemon for the current user"
+    echo "pg-register-service ${g_version} - register a postgres daemon for the current user"
     echo ""
     echo "USAGE"
     echo "    pg-register-service <port> [operating-system-user]"
@@ -17,11 +19,6 @@ fn_help() { (
     echo "    Copyright (c) 2024 AJ ONeal <aj@bnna.net>"
     echo "    Licensed under the MPL-2.0"
 ); }
-
-g_sudo=""
-if command -v sudo > /dev/null; then
-    g_sudo="sudo"
-fi
 
 fn_serviceman_find_or_install() { (
     # if ! command -v serviceman > /dev/null; then

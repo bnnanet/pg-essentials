@@ -2,8 +2,10 @@
 set -e
 set -u
 
+g_version="v1.0.1"
+
 fn_help() { (
-    echo "pg-adduser v1.0.0 - adds a user (and db of the same name) to a group role"
+    echo "pg-adduser ${g_version} - adds a user (and db of the same name) to a group role"
     echo ""
     echo "USAGE"
     echo "    pg-adduser <username-prefix> [port] [group-name]"
