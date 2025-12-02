@@ -26,28 +26,41 @@ fi
 # aarch64-darwin
 g_target="${g_prof}${g_arch}-${g_platform}${g_libc}"
 
+fn_help() { (
+    echo ""
+    echo "USAGE"
+    echo "    pg-build-macos <vendor-name> <pg-version>"
+    echo ""
+    echo "EXAMPLE"
+    echo "    pg-build-macos 'custom' 18.1"
+    echo ""
+    echo "ENVs"
+    echo "    Use ENVs to set the (cosmetic) patch version"
+    echo "    POSTGRES_PATCH_VERSION=0"
+    echo "    (the LLVM version will be set the same as Xcode clang)"
+    echo ""
+); }
+
 main() { (
     case "${g_vendor}" in
         -V | --version | version)
             echo "pg-build-macos ${g_version}"
             return 0
             ;;
-        "" | --help | help)
-            echo ""
-            echo "USAGE"
-            echo "    pg-build-macos <vendor-name> <pg-version>"
-            echo ""
-            echo "EXAMPLE"
-            echo "    pg-build-macos 'custom' 18.1"
-            echo ""
-            echo "ENVs"
-            echo "    Use ENVs to set the (cosmetic) patch version"
-            echo "    POSTGRES_PATCH_VERSION=0"
-            echo "    (the LLVM version will be set the same as Xcode clang)"
-            echo ""
+        --help | help)
+            fn_help
+            return 1
+            ;;
+        "")
+            fn_help
             return 1
             ;;
     esac
+
+    if test -z "${g_ver}"; then
+        fn_help
+        return 1
+    fi
 
     echo ""
     echo ""

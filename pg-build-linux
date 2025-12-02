@@ -37,28 +37,41 @@ if ! test -e "${g_libdir}"; then
     g_libdir="/usr/lib"
 fi
 
+fn_help() { (
+    echo ""
+    echo "USAGE"
+    echo "    pg-build-linux <vendor-name> <pg-version>"
+    echo ""
+    echo "EXAMPLE"
+    echo "    pg-build-linux 'custom' 18.1"
+    echo ""
+    echo "ENVs"
+    echo "    Use ENVs to set the (cosmetic) patch version and optional LLVM version"
+    echo "    POSTGRES_PATCH_VERSION=0"
+    echo "    POSTGRES_LLVM_VERSION=20"
+    echo ""
+); }
+
 main() { (
     case "${g_vendor}" in
         -V | --version | version)
             echo "pg-build-linux ${g_version}"
             return 0
             ;;
-        "" | --help | help)
-            echo ""
-            echo "USAGE"
-            echo "    pg-build-linux <vendor-name> <pg-version>"
-            echo ""
-            echo "EXAMPLE"
-            echo "    pg-build-linux 'custom' 18.1"
-            echo ""
-            echo "ENVs"
-            echo "    Use ENVs to set the (cosmetic) patch version and optional LLVM version"
-            echo "    POSTGRES_PATCH_VERSION=0"
-            echo "    POSTGRES_LLVM_VERSION=20"
-            echo ""
+        --help | help)
+            fn_help
+            return 0
+            ;;
+        "")
+            fn_help
             return 1
             ;;
     esac
+
+    if test -z "${g_ver}"; then
+        fn_help
+        return 1
+    fi
 
     echo ""
     echo "Installing build dependencies ..."
