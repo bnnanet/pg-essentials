@@ -27,6 +27,11 @@ fn_pg_dump_parts() { (
     b_port="${3}"
     b_db="${4}"
 
+    if test "${b_port}" = 443; then
+        export PGSSLMODE=require
+        export PGSSLNEGOTIATION=direct
+    fi
+
     # Note: schema includes extensions such as htstore and uuid
     pg_dump --no-privileges --no-owner --schema-only --clean \
         --username "${b_user}" --no-password --host "${b_host}" --port "${b_port}" \
