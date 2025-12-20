@@ -2,15 +2,17 @@
 set -e
 set -u
 
-g_version="v1.1.4"
+g_version="v1.2.0"
 
 fn_help() { (
     echo "psql-backup ${g_version} - creates portable (across instances) SQL schema & data backups"
     echo ""
     echo "USAGE"
+    echo "    psql-backup <pgurl>"
     echo "    psql-backup <user> [host] [port] [dbname]"
     echo ""
     echo "EXAMPLE"
+    echo "    psql-backup 'postgres://postgres@localhost:5432/postgres"
     echo "    psql-backup 'foobar-xxxxxx' 'pg-1.example.com' 5432 'foobar-xxxxxx'"
     echo ""
     echo "NOTES"
@@ -92,8 +94,35 @@ main() { (
     b_pghost="${2:-localhost}"
     b_pgport="${3:-5432}"
     b_pgdb="${4:-$b_pguser}"
+    b_pgparams=""
+    if echo "${b_pguser}" | grep -q '@'; then
+        b_pgurl="${b_pguser}"
 
-    fn_pg_dump_parts "${b_pguser}" "${b_pghost}" "${b_pgport}" "${b_pgdb}"
+        if echo "${b_pgurl}" | grep -q -v '?'; then
+            b_pgurl="${b_pgurl}?"
+        fi
+        b_pgparams="$(echo "${b_pgurl}" | cut -d'@' -f2 | cut -d'?' -f2-)"
+        b_host_port="$(echo "${b_pgurl}" | cut -d'@' -f2 | cut -d'/' -f1)"
+        b_pghost="$(echo "${b_host_port}" | cut -d':' -f1)"
+        if echo "${b_host_port}" | grep -q ':'; then
+            b_pgport="$(echo "${b_host_port}" | cut -d':' -f2)"
+        else
+            b_pgport=5432
+        fi
+        b_pgdb="$(echo "${b_pgurl}" | rev | cut -d'/' -f1 | rev | cut -d'?' -f1)"
+        b_user_pass="$(echo "${b_pgurl}" | cut -d'@' -f1 | sed 's;://;:;g' | cut -d':' -f2-)"
+        b_pguser="$(echo "${b_user_pass}" | cut -d':' -f1)"
+        if echo "${b_user_pass}" | grep -q ':'; then
+            {
+                echo "error:"
+                echo "   to use a saved password, first run 'psql-store-credential'"
+                echo "   then re-run this command without the inline password"
+            } >&2
+            return 1
+        fi
+    fi
+
+    fn_pg_dump_parts "${b_pguser}" "${b_pghost}" "${b_pgport}" "${b_pgdb}" "${b_pgparams}"
 ); }
 
 main "${@:-}"
