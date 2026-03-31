@@ -21,10 +21,9 @@ fn_help() { (
 ); }
 
 fn_serviceman_find_or_install() { (
-    # if ! command -v serviceman > /dev/null; then
-    # Get the latest serviceman
-    curl --fail-with-body -sS https://webi.sh/serviceman@0.x | sh
-    # fi
+    # Always update to latest — no version constraint.
+    # serviceman@0.x fails on musl (libc detection mismatch).
+    curl --fail-with-body -sS https://webi.sh/serviceman | sh
 ); }
 
 fn_init_local_db() { (
@@ -59,7 +58,7 @@ fn_serviceman_add_pg() { (
         serviceman add --name "postgres" -- \
             postgres -D "${HOME}/.local/share/postgres/var" -p "${b_port}"
     else
-        serviceman add --name "postgres-as-${b_user}" --user "${b_user}" -- \
+        serviceman add --name "postgres" --user "${b_user}" -- \
             postgres -D "${HOME}/.local/share/postgres/var" -p "${b_port}"
     fi
 ); }
@@ -97,7 +96,14 @@ main() { (
     echo '~'/.local/share/postgres/var/
 
     fn_serviceman_add_pg "${b_pguser}" "${b_pgport}" >&2
-    echo "/etc/systemd/system/postgres-as-${b_pguser}.service"
+    b_os="$(uname -s)"
+    if test "${b_os}" = 'Darwin'; then
+        echo '~'"/Library/LaunchAgents/postgres.plist"
+    elif test -d /etc/init.d; then
+        echo "/etc/init.d/postgres"
+    else
+        echo "/etc/systemd/system/postgres.service"
+    fi
 ); }
 
 main "${@:-}"
