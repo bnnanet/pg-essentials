@@ -1,0 +1,240 @@
+#!/bin/sh
+set -e
+set -u
+
+g_version="v1.0.0"
+
+g_sudo=""
+if command -v sudo > /dev/null; then
+    g_sudo="sudo"
+fi
+
+main() { (
+    b_username=""
+    b_pgport="5432"
+    b_group="admin_users"
+    b_tenant_group="remote_users"
+    b_host_networks=""
+    b_hostssl_networks=""
+
+    while test $# -gt 0; do
+        case "${1}" in
+            --help | help)
+                fn_help
+                return 0
+                ;;
+            -V | --version | version)
+                fn_help
+                return 0
+                ;;
+            --port)
+                b_pgport="${2}"
+                shift
+                ;;
+            --group)
+                b_group="${2}"
+                shift
+                ;;
+            --host-networks)
+                b_host_networks="${2}"
+                shift
+                ;;
+            --hostssl-networks)
+                b_hostssl_networks="${2}"
+                shift
+                ;;
+            --tenant-group)
+                b_tenant_group="${2}"
+                shift
+                ;;
+            -*)
+                echo "unknown flag: ${1}" >&2
+                fn_help >&2
+                return 1
+                ;;
+            *)
+                if test -z "${b_username}"; then
+                    b_username="${1}"
+                else
+                    echo "unexpected argument: ${1}" >&2
+                    fn_help >&2
+                    return 1
+                fi
+                ;;
+        esac
+        shift
+    done
+
+    if test -z "${b_username}"; then
+        fn_help >&2
+        return 1
+    fi
+
+    if test -z "${b_host_networks}" && test -z "${b_hostssl_networks}"; then
+        echo "ERROR: at least one of --host-networks or --hostssl-networks required" >&2
+        echo "" >&2
+        fn_help >&2
+        return 1
+    fi
+
+    b_pw_base58="$(fn_rnd_base58)"
+
+    fn_pg_ensure_group "${b_pgport}" "${b_group}" >&2
+    fn_pg_create_admin "${b_group}" "${b_username}" "${b_pw_base58}" "${b_pgport}" "${b_tenant_group}" >&2
+    fn_pg_hba_add_admin "${b_group}" "${b_host_networks}" "${b_hostssl_networks}" >&2
+    fn_rc_restart_pg >&2
+
+    echo >&2 ""
+    echo "username: '${b_username}'"
+    echo "password: '${b_pw_base58}'"
+    echo >&2 ""
+    echo "pgpass: localhost:${b_pgport}:*:${b_username}:${b_pw_base58}"
+    echo >&2 ""
+    echo "psql 'postgres://${b_username}:${b_pw_base58}@localhost:${b_pgport}/postgres'"
+    echo >&2 ""
+); }
+
+fn_help() { (
+    echo "pg-addadmin ${g_version} - create a remote admin role with CREATEDB + CREATEROLE"
+    echo ""
+    echo "USAGE"
+    echo "    pg-addadmin <username> [options]"
+    echo ""
+    echo "OPTIONS"
+    echo "    --port <port>                  postgres port (default: 5432)"
+    echo "    --group <name>                 admin group name (default: admin_users)"
+    echo "    --tenant-group <name>          tenant group to grant WITH ADMIN OPTION (default: remote_users)"
+    echo "    --host-networks <cidrs>            comma-separated CIDRs for 'host' entries"
+    echo "    --hostssl-networks <cidrs>         comma-separated CIDRs for 'hostssl' entries"
+    echo ""
+    echo "EXAMPLES"
+    echo "    # Shared network only (TLS at pg level)"
+    echo "    pg-addadmin pmx_admin --port 15432 \\"
+    echo "      --hostssl-networks 172.31.0.0/24"
+    echo ""
+    echo "    # Shared network + private subnet behind TLS-terminating proxy"
+    echo "    pg-addadmin pmx_admin --port 15432 \\"
+    echo "      --host-networks 10.254.254.0/24 \\"
+    echo "      --hostssl-networks 172.31.0.0/24"
+    echo ""
+    echo "NOTES"
+    echo "    - creates the admin group if it doesn't exist"
+    echo "    - the admin role gets LOGIN, INHERIT, CREATEDB, CREATEROLE"
+    echo "    - grants tenant group (remote_users) WITH ADMIN OPTION"
+    echo "    - pg_hba entries allow access to ALL databases (not sameuser)"
+    echo "    - --host-networks uses 'host' (no pg-level TLS, e.g. localhost"
+    echo "      or connections behind a TLS-terminating proxy)"
+    echo "    - --hostssl-networks uses 'hostssl' (TLS to postgres)"
+    echo "    - password is a random base58 (url-safe) string"
+    echo "    - run this once per postgres instance"
+    echo ""
+    echo "COPYING"
+    echo "    Copyright (c) 2024-2025 AJ ONeal <aj@bnna.net>"
+    echo "    Licensed under the MPL-2.0"
+); }
+
+fn_pg_ensure_group() { (
+    a_port="${1}"
+    a_group="${2}"
+
+    # Check if the group role already exists.
+    b_exists="$(echo "SELECT 1 FROM pg_roles WHERE rolname = '${a_group}';" |
+        psql "postgres://postgres:postgres@localhost:${a_port}/postgres" -tA -f -)"
+
+    if test -n "${b_exists}"; then
+        echo "Group '${a_group}' already exists, skipping..."
+        return 0
+    fi
+
+    echo "Creating group role '${a_group}'..."
+    echo "CREATE ROLE \"${a_group}\" NOLOGIN;" |
+        psql "postgres://postgres:postgres@localhost:${a_port}/postgres" -f -
+); }
+
+fn_pg_create_admin() { (
+    a_group="${1}"
+    a_user="${2}"
+    a_pw="${3}"
+    a_port="${4}"
+    a_tenant_group="${5}"
+
+    echo "Creating admin role '${a_user}' with CREATEDB + CREATEROLE ..."
+    echo "CREATE ROLE \"${a_user}\" LOGIN INHERIT CREATEDB CREATEROLE IN ROLE \"${a_group}\" ENCRYPTED PASSWORD '${a_pw}';" |
+        psql "postgres://postgres:postgres@localhost:${a_port}/postgres" -f -
+
+    if test -n "${a_tenant_group}"; then
+        echo "Granting '${a_tenant_group}' to '${a_user}' WITH ADMIN OPTION ..."
+        echo "GRANT \"${a_tenant_group}\" TO \"${a_user}\" WITH ADMIN OPTION;" |
+            psql "postgres://postgres:postgres@localhost:${a_port}/postgres" -f -
+    fi
+); }
+
+fn_pg_hba_add_admin() { (
+    a_group="${1}"
+    a_host="${2}"
+    a_hostssl="${3}"
+
+    b_hba=~/.local/share/postgres/var/pg_hba.conf
+
+    if grep -q -F "+${a_group}" "${b_hba}"; then
+        echo "pg_hba entries for group '${a_group}' already exist, skipping..."
+        return 0
+    fi
+
+    echo "Adding pg_hba entries for group '${a_group}' (all databases) ..."
+
+    b_lines=""
+
+    # host networks: no pg-level TLS (localhost, behind TLS proxy, etc.)
+    if test -n "${a_host}"; then
+        b_lines="${b_lines}
+# Allow ${a_group} via host networks (no pg-level TLS)"
+        b_old_ifs="${IFS}"
+        IFS=','
+        for b_cidr in ${a_host}; do
+            b_lines="${b_lines}
+host all             +${a_group}       ${b_cidr}               scram-sha-256"
+        done
+        IFS="${b_old_ifs}"
+    fi
+
+    # hostssl networks: TLS required at pg level
+    if test -n "${a_hostssl}"; then
+        b_lines="${b_lines}
+# Allow ${a_group} via hostssl networks (TLS required)"
+        b_old_ifs="${IFS}"
+        IFS=','
+        for b_cidr in ${a_hostssl}; do
+            b_lines="${b_lines}
+hostssl all             +${a_group}       ${b_cidr}               scram-sha-256"
+        done
+        IFS="${b_old_ifs}"
+    fi
+
+    echo "${b_lines}" >> "${b_hba}"
+); }
+
+fn_rc_restart_pg() { (
+    echo "Restarting postgres"
+    if command -v systemctl > /dev/null; then
+        ${g_sudo} systemctl restart postgres
+    elif command -v rc-service > /dev/null; then
+        ${g_sudo} rc-service postgres restart
+    elif command -v launchctl > /dev/null; then
+        launchctl unload ~/Library/LaunchAgents/postgres.plist
+        launchctl load ~/Library/LaunchAgents/postgres.plist
+    else
+        ${g_sudo} killall postgres
+    fi
+); }
+
+fn_rnd_base58() { (
+    xxd -c 0 -l 64 -p /dev/urandom |
+        xxd -r -ps |
+        base64 -w 0 |
+        tr -d /+_=- |
+        tr -d 0IOl |
+        cut -c 1-22
+); }
+
+main "${@:-}"
