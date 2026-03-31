@@ -10,6 +10,7 @@ Utilities for managing PostgreSQL databases, including multi-tenant scenarios.
 -   pg-install
 -   pg-register-service
 -   pg-addgroup
+-   pg-addadmin
 -   pg-adduser
 -   psql-store-credential
 -   pg-passwd
@@ -73,6 +74,41 @@ EXAMPLE
 
 NOTE
     use 'host' rather than 'hostssl' if you terminate postgres' tls via proxy
+```
+
+## pg-addadmin
+
+```text
+pg-addadmin v1.0.0 - create a remote admin role with CREATEDB + CREATEROLE
+
+USAGE
+    pg-addadmin <username> [options]
+
+OPTIONS
+    --port <port>                  postgres port (default: 5432)
+    --group <name>                 admin group name (default: admin_users)
+    --host-networks <cidrs>            comma-separated CIDRs for 'host' entries
+    --hostssl-networks <cidrs>         comma-separated CIDRs for 'hostssl' entries
+
+EXAMPLES
+    # Shared network only (TLS at pg level)
+    pg-addadmin pmx_admin --port 15432 \
+      --hostssl-networks 172.31.0.0/24
+
+    # Shared network + private subnet behind TLS-terminating proxy
+    pg-addadmin pmx_admin --port 15432 \
+      --host-networks 10.254.254.0/24 \
+      --hostssl-networks 172.31.0.0/24
+
+NOTES
+    - creates the admin group (admin_users) if it doesn't exist
+    - the admin role gets LOGIN, INHERIT, CREATEDB, CREATEROLE
+    - pg_hba entries allow access to ALL databases (not sameuser)
+    - --host-networks uses 'host' (no pg-level TLS, e.g. behind
+      a TLS-terminating proxy or on isolated private networks)
+    - --hostssl-networks uses 'hostssl' (TLS at pg level, for
+      shared/untrusted networks)
+    - run this once per postgres instance
 ```
 
 ## pg-adduser
